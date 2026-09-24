@@ -63,6 +63,24 @@ otherwise `running` when kilo reports `busy`/`retry`, `idle` when `idle`/`offlin
 
 Single session, same shape as above. `404 session_not_found` when unknown.
 
+### `GET /api/v1/sessions/{id}/pending`
+
+Pending permission/question payloads for a session, used to recover approval dialogs
+after missed SSE events (app/service down, `resync.required`, ring-buffer rollover).
+The arrays are the raw kilo `/permission` and `/question` payloads for this session:
+
+```json
+{"permissions":[{"id":"perm_...","sessionID":"ses_...","permission":"bash","pattern":"git *"}],
+ "questions":[]}
+```
+
+- `permissions` / `questions` are always arrays (`[]` when nothing is pending; never `null`).
+- `404 session_not_found` when the session is unknown.
+- Payloads are retained in memory as they arrive (SSE `permission.asked`/`question.asked`)
+  and refreshed every pending poll (10 s) / resync. Payload shape is a kilo passthrough.
+- Older servers without this endpoint return `404 not_found` — the app must degrade to
+  "needs approval on PC".
+
 ### `GET /api/v1/sessions/{id}/messages?limit=&before=`
 
 Transcript. `limit` (default 50, max 500) and `before` (message id, exclusive) map directly

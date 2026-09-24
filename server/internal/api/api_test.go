@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/easyoneweb/easy-code-remote/server/internal/event"
+	"github.com/easyoneweb/easy-code-remote/server/internal/kilo"
 	"github.com/easyoneweb/easy-code-remote/server/internal/store"
 	"github.com/easyoneweb/easy-code-remote/server/internal/supervisor"
 )
@@ -86,6 +88,19 @@ func (s *safeRecorder) String() string { s.mu.Lock(); defer s.mu.Unlock(); retur
 
 func newTestAPI() *Server {
 	return New(nil, store.New(), supervisor.New("/nonexistent/kilo", "127.0.0.1", 1, "x", nil), "test", nil)
+}
+
+// newKiloClientFor builds a kilo.Client pointed at a test HTTP server.
+func newKiloClientFor(t *testing.T, srv *httptest.Server) *kilo.Client {
+	host := strings.TrimPrefix(srv.URL, "http://")
+	parts := strings.Split(host, ":")
+	port := 80
+	if len(parts) == 2 {
+		if n, err := strconv.Atoi(parts[1]); err == nil {
+			port = n
+		}
+	}
+	return kilo.NewClient(parts[0], port, "pw")
 }
 
 func TestEventsHandlerNoCursorLiveOnly(t *testing.T) {
@@ -242,5 +257,85 @@ func TestWildcardRuleRejected(t *testing.T) {
 	}
 	if isWildcardRule(json.RawMessage(`{"permission":"bash","pattern":"git *"}`)) {
 		t.Fatal("specific rule flagged as wildcard")
+	}
+}
+
+func TestHandlePending(t *testing.T) {
+	s := newTestAPI()
+	// Seed the store so ensureSession's fast-path passes without kilo.
+	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
+		"info": map[string]any{"id": "ses_x", "title": "X"},
+	}})
+	s.Store.ApplyEvent(event.Event{Type: "permission.asked", SessionID: "ses_x", Data: map[string]any{
+		"id": "perm_1", "sessionID": "ses_x", "permission": "bash", "pattern": "git status",
+	}})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ses_x/pending", nil)
+	req.SetPathValue("id", "ses_x")
+	s.HandlePending(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Permissions []json.RawMessage `json:"permissions"`
+		Questions   []json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Permissions) != 1 || len(body.Questions) != 0 {
+		t.Fatalf("body: %s", rec.Body.String())
+	}
+	if !strings.Contains(string(body.Permissions[0]), "perm_1") {
+		t.Fatalf("permission payload: %s", string(body.Permissions[0]))
+	}
+}
+
+func TestHandlePendingEmptyAndNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/session/ses_known" {
+			_, _ = w.Write([]byte(`{"id":"ses_known"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	s := New(newKiloClientFor(t, srv), store.New(), supervisor.New("/nonexistent/kilo", "127.0.0.1", 1, "x", nil), "test", nil)
+	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_known", Data: map[string]any{
+		"info": map[string]any{"id": "ses_known", "title": "Known"},
+	}})
+
+	// Known session with nothing pending -> empty arrays.
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ses_known/pending", nil)
+	req.SetPathValue("id", "ses_known")
+	s.HandlePending(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var body struct {
+		Permissions []json.RawMessage `json:"permissions"`
+		Questions   []json.RawMessage `json:"questions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Permissions == nil || body.Questions == nil {
+		t.Fatalf("arrays must serialize as [] not null: %s", rec.Body.String())
+	}
+	if len(body.Permissions) != 0 || len(body.Questions) != 0 {
+		t.Fatalf("body: %s", rec.Body.String())
+	}
+
+	// Unknown session -> 404 session_not_found via the authoritative kilo check.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ses_nope/pending", nil)
+	req.SetPathValue("id", "ses_nope")
+	s.HandlePending(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "session_not_found") {
+		t.Fatalf("body: %s", rec.Body.String())
 	}
 }

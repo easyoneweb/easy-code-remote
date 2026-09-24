@@ -96,9 +96,25 @@ the shared Kilo data directory.
   `Authorization: Bearer <token>` (except `GET /health`).
 - Full contract (single source of truth): [`docs/protocol.md`](docs/protocol.md).
 
+### Android app (`android/`)
+
+A native Kotlin + Jetpack Compose app (single activity, MVVM) in this repository. It
+connects over public TLS to this server and provides live session lists, streaming
+transcripts, message/abort/command, permission + question approvals, and background
+notifications — no Kilo gateway/account, no Firebase.
+
+- Build: open `android/` in Android Studio and run on a real device (min SDK 26, target 35).
+  Sideload the APK — there is no store distribution for v1.
+- First connect is TOFU (trust-on-first-use): the app shows the server certificate
+  fingerprint; after you confirm, it is pinned. `easy-code-remote cert regen` then shows a
+  blocking "certificate changed" screen instead of a silent error.
+- Dev without public internet: `adb reverse tcp:8443 tcp:8443`, then connect to
+  `https://127.0.0.1:8443` (debug builds allow cleartext only for localhost/LAN).
+
 ### Certificate trust
 
-The self-signed certificate is not trusted by Android. Either:
+The self-signed certificate is not trusted by Android. The Android app uses TOFU pinning,
+so no manual install is needed. For other clients, either:
 
 - import `~/.config/easy-code-remote/tls/cert.pem` into the Android device (Settings →
   Security → Install certificate), or
@@ -118,6 +134,9 @@ The self-signed cert is only a convenience for first setup.
   / `engine.connected` events.
 - Phone SSE drop → reconnect with `?cursor=` resumes from the in-memory ring buffer; if the
   buffer rolled over, a `resync.required` event is sent (call `GET /api/v1/sessions`).
+- Missed `permission.asked`/`question.asked` (app closed, buffer rollover) → the phone
+  recovers the payloads via `GET /api/v1/sessions/{id}/pending`; older servers without that
+  endpoint degrade to "needs approval on PC".
 - Cert expiry → `cert regen` (or replace files) and restart.
 
 ## Security notes

@@ -47,6 +47,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/sessions", s.API.HandleSessions)
 	apiMux.HandleFunc("GET /api/v1/sessions/{id}", s.API.HandleSession)
 	apiMux.HandleFunc("GET /api/v1/sessions/{id}/messages", s.API.HandleMessages)
+	apiMux.HandleFunc("GET /api/v1/sessions/{id}/pending", s.API.HandlePending)
 	apiMux.HandleFunc("GET /api/v1/sessions/{id}/diff", s.API.HandleDiff)
 	apiMux.HandleFunc("POST /api/v1/sessions/{id}/message", s.API.HandleSendMessage)
 	apiMux.HandleFunc("POST /api/v1/sessions/{id}/abort", s.API.HandleAbort)

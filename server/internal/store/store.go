@@ -32,21 +32,25 @@ type msgCacheEntry struct {
 
 // Store is the in-memory session/status store.
 type Store struct {
-	mu          sync.RWMutex
-	sessions    map[string]*sessionEntry
-	order       []string // session ids in resync order (most recent first after sort on read)
-	pendingPerm map[string]bool
-	pendingQ    map[string]bool
-	msgCache    map[string]msgCacheEntry
+	mu                  sync.RWMutex
+	sessions            map[string]*sessionEntry
+	order               []string // session ids in resync order (most recent first after sort on read)
+	pendingPerm         map[string]bool
+	pendingQ            map[string]bool
+	pendingPermPayloads map[string][]json.RawMessage // raw kilo /permission payloads per session
+	pendingQPayloads    map[string][]json.RawMessage // raw kilo /question payloads per session
+	msgCache            map[string]msgCacheEntry
 }
 
 // New creates an empty Store.
 func New() *Store {
 	return &Store{
-		sessions:    make(map[string]*sessionEntry),
-		pendingPerm: make(map[string]bool),
-		pendingQ:    make(map[string]bool),
-		msgCache:    make(map[string]msgCacheEntry),
+		sessions:            make(map[string]*sessionEntry),
+		pendingPerm:         make(map[string]bool),
+		pendingQ:            make(map[string]bool),
+		pendingPermPayloads: make(map[string][]json.RawMessage),
+		pendingQPayloads:    make(map[string][]json.RawMessage),
+		msgCache:            make(map[string]msgCacheEntry),
 	}
 }
 
@@ -92,6 +96,8 @@ func (s *Store) Resync(ctx context.Context, c *kilo.Client) error {
 	}
 	s.pendingPerm = pendingSet(perms)
 	s.pendingQ = pendingSet(questions)
+	s.pendingPermPayloads = groupPayloads(perms)
+	s.pendingQPayloads = groupPayloads(questions)
 	return nil
 }
 
@@ -105,6 +111,23 @@ func pendingSet(entries []json.RawMessage) map[string]bool {
 		if id, ok := m["sessionID"].(string); ok && id != "" {
 			out[id] = true
 		}
+	}
+	return out
+}
+
+// groupPayloads groups raw kilo pending entries by their sessionID field.
+func groupPayloads(entries []json.RawMessage) map[string][]json.RawMessage {
+	out := make(map[string][]json.RawMessage)
+	for _, raw := range entries {
+		var m map[string]any
+		if json.Unmarshal(raw, &m) != nil {
+			continue
+		}
+		id, _ := m["sessionID"].(string)
+		if id == "" {
+			continue
+		}
+		out[id] = append(out[id], raw)
 	}
 	return out
 }
@@ -123,6 +146,8 @@ func (s *Store) PollPending(ctx context.Context, c *kilo.Client) error {
 	defer s.mu.Unlock()
 	s.pendingPerm = pendingSet(perms)
 	s.pendingQ = pendingSet(questions)
+	s.pendingPermPayloads = groupPayloads(perms)
+	s.pendingQPayloads = groupPayloads(questions)
 	return nil
 }
 
@@ -151,6 +176,8 @@ func (s *Store) ApplyEvent(e event.Event) {
 		}
 		delete(s.pendingPerm, e.SessionID)
 		delete(s.pendingQ, e.SessionID)
+		delete(s.pendingPermPayloads, e.SessionID)
+		delete(s.pendingQPayloads, e.SessionID)
 		s.mu.Unlock()
 	case "session.status":
 		var status string
@@ -167,12 +194,16 @@ func (s *Store) ApplyEvent(e event.Event) {
 		s.mu.Unlock()
 	case "permission.asked":
 		s.setPending(s.pendingPerm, e.SessionID, true)
+		s.addPendingPayload(s.pendingPermPayloads, e.SessionID, e.Data)
 	case "permission.replied":
 		s.setPending(s.pendingPerm, e.SessionID, false)
+		s.clearPendingPayload(s.pendingPermPayloads, e.SessionID)
 	case "question.asked":
 		s.setPending(s.pendingQ, e.SessionID, true)
+		s.addPendingPayload(s.pendingQPayloads, e.SessionID, e.Data)
 	case "question.replied", "question.rejected":
 		s.setPending(s.pendingQ, e.SessionID, false)
+		s.clearPendingPayload(s.pendingQPayloads, e.SessionID)
 	}
 }
 
@@ -187,6 +218,31 @@ func (s *Store) setPending(m map[string]bool, sid string, v bool) {
 	} else {
 		delete(m, sid)
 	}
+}
+
+// addPendingPayload retains the raw kilo payload of a permission.asked /
+// question.asked event so phones can render approvals after missed events.
+func (s *Store) addPendingPayload(m map[string][]json.RawMessage, sid string, data map[string]any) {
+	if sid == "" || data == nil {
+		return
+	}
+	raw, err := json.Marshal(data)
+	if err != nil || string(raw) == "null" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m[sid] = append(m[sid], raw)
+}
+
+// clearPendingPayload drops all retained payloads for a session (resolved).
+func (s *Store) clearPendingPayload(m map[string][]json.RawMessage, sid string) {
+	if sid == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(m, sid)
 }
 
 // Session returns one session map (with derived status) or nil.
@@ -223,6 +279,22 @@ func updatedTime(m map[string]any) int64 {
 	}
 	v, _ := tm["updated"].(float64)
 	return int64(v)
+}
+
+// Pending returns the raw pending permission/question payloads retained for a
+// session. Both slices are non-nil (serialize as []) when nothing is pending.
+func (s *Store) Pending(sessionID string) ([]json.RawMessage, []json.RawMessage) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	perms := make([]json.RawMessage, 0)
+	if p, ok := s.pendingPermPayloads[sessionID]; ok {
+		perms = append(perms, p...)
+	}
+	qs := make([]json.RawMessage, 0)
+	if q, ok := s.pendingQPayloads[sessionID]; ok {
+		qs = append(qs, q...)
+	}
+	return perms, qs
 }
 
 func (s *Store) decorate(e *sessionEntry) map[string]any {

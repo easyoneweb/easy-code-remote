@@ -90,6 +90,22 @@ func (s *Server) ensureSession(ctx context.Context, w http.ResponseWriter, sessi
 	return true
 }
 
+// HandlePending returns the retained pending permission/question payloads for
+// a session (kilo passthrough arrays; empty arrays when nothing is pending).
+func (s *Server) HandlePending(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("id")
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if !s.ensureSession(ctx, w, sessionID) {
+		return
+	}
+	perms, questions := s.Store.Pending(sessionID)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"permissions": perms,
+		"questions":   questions,
+	})
+}
+
 // HandleMessages returns the transcript for a session.
 func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")

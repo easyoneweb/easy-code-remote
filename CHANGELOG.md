@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `GET /api/v1/sessions/{id}/pending` returning the raw pending permission/question
+  payloads for a session (kilo passthrough arrays), so phones can recover approval
+  dialogs after missed SSE events. The store now retains per-session pending payloads
+  from `permission.asked`/`question.asked` and the 10 s pending poll.
 - Go companion server (`server/`) exposing a secure HTTPS API (`/api/v1`) to Android phones
   over the public internet: TLS termination, bearer-token auth, per-IP rate limiting, JSON access log.
 - Supervised `kilo serve` subprocess (own `KILO_SERVER_PASSWORD`, port 18500) with crash

@@ -183,3 +183,56 @@ func TestPendingSet(t *testing.T) {
 		t.Fatalf("pending set wrong: %v", set)
 	}
 }
+
+func TestPendingPayloads(t *testing.T) {
+	srv := testKiloServer(t) // /permission -> [{"sessionID":"ses_2","id":"perm_1"}]
+	st := New()
+	if err := st.Resync(context.Background(), clientFor(t, srv)); err != nil {
+		t.Fatal(err)
+	}
+	perms, qs := st.Pending("ses_2")
+	if len(perms) != 1 || len(qs) != 0 {
+		t.Fatalf("after resync: perms=%d qs=%d", len(perms), len(qs))
+	}
+	if !strings.Contains(string(perms[0]), "perm_1") {
+		t.Fatalf("permission payload: %s", string(perms[0]))
+	}
+	// ApplyEvent asked retains payloads; replied clears them.
+	st.ApplyEvent(event.Event{Type: "question.asked", SessionID: "ses_2", Data: map[string]any{
+		"id": "q_9", "sessionID": "ses_2", "question": "continue?",
+	}})
+	if _, qs := st.Pending("ses_2"); len(qs) != 1 {
+		t.Fatalf("qs=%d want 1 after question.asked", len(qs))
+	}
+	st.ApplyEvent(event.Event{Type: "question.rejected", SessionID: "ses_2"})
+	if _, qs := st.Pending("ses_2"); len(qs) != 0 {
+		t.Fatalf("qs=%d want 0 after question.rejected", len(qs))
+	}
+	// A malformed/nil asked payload is not retained.
+	st.ApplyEvent(event.Event{Type: "permission.asked", SessionID: "ses_2", Data: nil})
+	if perms, _ := st.Pending("ses_2"); len(perms) != 1 {
+		t.Fatalf("nil payload must not be retained; perms=%d want 1", len(perms))
+	}
+	// Unknown session -> empty (non-nil) slices.
+	perms, qs = st.Pending("nope")
+	if perms == nil || qs == nil || len(perms) != 0 || len(qs) != 0 {
+		t.Fatalf("unknown session pending must be empty arrays: %v/%v", perms, qs)
+	}
+}
+
+func TestSessionDeletedClearsPendingPayloads(t *testing.T) {
+	st := New()
+	st.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
+		"info": map[string]any{"id": "ses_x", "title": "X"},
+	}})
+	st.ApplyEvent(event.Event{Type: "permission.asked", SessionID: "ses_x", Data: map[string]any{
+		"id": "perm_1", "sessionID": "ses_x",
+	}})
+	if perms, _ := st.Pending("ses_x"); len(perms) != 1 {
+		t.Fatalf("perms=%d want 1", len(perms))
+	}
+	st.ApplyEvent(event.Event{Type: "session.deleted", SessionID: "ses_x"})
+	if perms, _ := st.Pending("ses_x"); len(perms) != 0 {
+		t.Fatalf("perms=%d want 0 after delete", len(perms))
+	}
+}

@@ -1,0 +1,29 @@
+# Build output
+/build
+/app/build
+/app/schemas
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Gradle
+.gradle
+local.properties
+!gradle/wrapper/gradle-wrapper.jar
+
+# Keystores / signing material — never commit
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS noise
+.DS_Store

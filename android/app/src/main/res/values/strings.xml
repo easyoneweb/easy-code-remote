@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Easy Code Remote</string>
+
+    <!-- Notification channels -->
+    <string name="channel_approvals">Approvals</string>
+    <string name="channel_approvals_desc">Permission requests and questions from your agents</string>
+    <string name="channel_completions">Completions</string>
+    <string name="channel_completions_desc">Agent runs finished or failed</string>
+    <string name="channel_attention">Attention</string>
+    <string name="channel_attention_desc">Engine connection problems and live-stream state</string>
+    <string name="channel_live">Live sync</string>
+    <string name="channel_live_desc">Foreground service keeping your sessions in sync</string>
+
+    <!-- Common -->
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="empty">Nothing here yet</string>
+    <string name="live_updates_off">Live updates are off</string>
+    <string name="offline_banner">Server unreachable — showing cached data</string>
+</resources>

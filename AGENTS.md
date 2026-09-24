@@ -43,5 +43,8 @@ gateway/account. See `README.md` (deployment) and `docs/protocol.md` (phone↔se
 ## Layout
 
 - `server/` — Go module: `cmd/`, `internal/{config,auth,kilo,api,event,supervisor,store,httpapi}`, `tests/`.
+- `android/` — Android app (Kotlin + Jetpack Compose, MVVM). Outside the Go module;
+  `make check` must stay green regardless of `android/` changes. Build with Android Studio
+  (min SDK 26, target/compile 35). v1 distribution is a sideloaded APK.
 - `docs/` — `protocol.md` (phone↔server API contract, single source of truth), `spike-findings.md`.
 - `scripts/` — systemd unit, `install.sh`, `e2e.sh`.
