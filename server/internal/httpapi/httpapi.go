@@ -60,8 +60,8 @@ func (s *Server) Handler() http.Handler {
 	var h http.Handler = apiMux
 	h = auth.Middleware(h, s.Cfg.Token)
 	h = s.rateLimit(h)
-	h = s.accessLog(h)
 	h = s.recover(h)
+	h = s.accessLog(h) // outermost so panics (recovered inside) are logged with their real status
 
 	mux.Handle("/", h)
 	return mux
@@ -90,6 +90,19 @@ func (s *Server) Serve(ctx context.Context) error {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutCtx)
+	}()
+	// Periodically evict idle rate-limit buckets so the map cannot grow forever.
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.Limit.Cleanup()
+			}
+		}
 	}()
 	s.Log.Info("https listener started", "addr", s.Cfg.ListenAddr)
 	err = srv.Serve(tlsLn)

@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -263,7 +264,7 @@ func (s *Store) Messages(ctx context.Context, c *kilo.Client, sessionID string, 
 	if limit > 500 {
 		limit = 500
 	}
-	key := sessionID + "|" + before
+	key := fmt.Sprintf("%s|%d|%s", sessionID, limit, before)
 	s.mu.RLock()
 	ce, ok := s.msgCache[key]
 	s.mu.RUnlock()

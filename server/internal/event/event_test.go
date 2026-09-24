@@ -48,6 +48,18 @@ func TestNormalizeLiveEvent(t *testing.T) {
 	}
 }
 
+func TestNormalizeLiveMessageExtractsIDs(t *testing.T) {
+	// Live message events carry the payload in properties (incl. info), not data.
+	raw := []byte(`{"id":"evt_2","type":"message.updated","properties":{"sessionID":"ses_abc","info":{"id":"msg_7","role":"user"}}}`)
+	e, err := Normalize(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.SessionID != "ses_abc" || e.MessageID != "msg_7" {
+		t.Fatalf("ids not extracted from live properties: %+v", e)
+	}
+}
+
 func TestNormalizeDeltaMapping(t *testing.T) {
 	raw := []byte(`{"id":"evt_3","type":"message.part.delta","properties":{"sessionID":"ses_abc","messageID":"msg_1","partID":"prt_9","field":"text","delta":"Hel"}}`)
 	e, err := Normalize(raw)

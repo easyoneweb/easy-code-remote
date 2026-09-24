@@ -105,8 +105,6 @@ func (s *Server) HandleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	before := r.URL.Query().Get("before")
-	ctx, cancel = context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
 	data, err := s.Store.Messages(ctx, s.K, sessionID, limit, before)
 	if err != nil {
 		writeKiloError(w, err)
@@ -232,8 +230,6 @@ func (s *Server) HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if req.System != "" {
 		body["system"] = req.System
 	}
-	ctx, cancel = context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
 	data, err := s.K.SendMessage(ctx, sessionID, body)
 	if err != nil {
 		writeKiloError(w, err)
@@ -300,8 +296,6 @@ func (s *Server) HandleCommand(w http.ResponseWriter, r *http.Request) {
 	if req.Variant != "" {
 		body["variant"] = req.Variant
 	}
-	ctx, cancel = context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
 	data, err := s.K.RunCommand(ctx, sessionID, body)
 	if err != nil {
 		writeKiloError(w, err)
@@ -348,8 +342,6 @@ func (s *Server) HandlePermission(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "action must be allow or deny", false)
 		return
 	}
-	ctx, cancel = context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
 	if err := s.K.PermissionReply(ctx, req.PermissionID, reply, req.Message, false); err != nil {
 		writeKiloError(w, err)
 		return
@@ -408,8 +400,6 @@ func (s *Server) HandleQuestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "questionID is required", false)
 		return
 	}
-	ctx, cancel = context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
 	if req.Action == "reject" {
 		if err := s.K.QuestionReject(ctx, req.QuestionID); err != nil {
 			writeKiloError(w, err)

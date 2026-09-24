@@ -74,33 +74,33 @@ func Normalize(raw []byte) (*Event, error) {
 	switch {
 	case re.AggregateID != "":
 		e.SessionID = re.AggregateID
-	case str(re.Data, "sessionID") != "":
-		e.SessionID = str(re.Data, "sessionID")
-	case str(re.Properties, "sessionID") != "":
-		e.SessionID = str(re.Properties, "sessionID")
+	case str(e.Data, "sessionID") != "":
+		e.SessionID = str(e.Data, "sessionID")
+	case str(e.Properties, "sessionID") != "":
+		e.SessionID = str(e.Properties, "sessionID")
 	}
 	if e.SessionID == "" {
-		if info, ok := re.Data["info"].(map[string]any); ok {
+		if info, ok := e.Data["info"].(map[string]any); ok {
 			e.SessionID = str(info, "id")
 		}
 	}
 	// Message id: properties.messageID > data.messageID > data.info.id (for message.* events).
-	if m := str(re.Properties, "messageID"); m != "" {
+	if m := str(e.Properties, "messageID"); m != "" {
 		e.MessageID = m
-	} else if m = str(re.Data, "messageID"); m != "" {
+	} else if m = str(e.Data, "messageID"); m != "" {
 		e.MessageID = m
 	} else if strings.HasPrefix(e.Type, "message.") {
-		if info, ok := re.Data["info"].(map[string]any); ok {
+		if info, ok := e.Data["info"].(map[string]any); ok {
 			e.MessageID = str(info, "id")
 		}
 	}
 	// Part id: properties.partID > data.part.id > data.partID.
-	if p := str(re.Properties, "partID"); p != "" {
+	if p := str(e.Properties, "partID"); p != "" {
 		e.PartID = p
-	} else if part, ok := re.Data["part"].(map[string]any); ok {
+	} else if part, ok := e.Data["part"].(map[string]any); ok {
 		e.PartID = str(part, "id")
 	} else {
-		e.PartID = str(re.Data, "partID")
+		e.PartID = str(e.Data, "partID")
 	}
 	// message.part.delta maps to an app-level message.part.updated carrying delta text.
 	if e.Type == "message.part.delta" {
