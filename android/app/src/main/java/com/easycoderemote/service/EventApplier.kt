@@ -210,16 +210,19 @@ class EventApplier(
 
     /** History fetch: store messages and their embedded parts in server order. */
     suspend fun storeHistory(sessionId: String, messages: List<com.easycoderemote.data.model.SessionMessageDto>) {
-        var seq = messageDao.maxSeq(profileId, sessionId) ?: 0L
+        var nextSeq = messageDao.maxSeq(profileId, sessionId) ?: 0L
         for (m in messages) {
-            seq += 1
+            // Keep the existing seq for messages already stored (re-fetch must not
+            // renumber them, which could collide with concurrently arriving SSE).
+            val existing = messageDao.observeMessage(profileId, sessionId, m.info.id).first()
+            val effectiveSeq = existing?.seq ?: ++nextSeq
             messageDao.upsert(
                 MessageEntity(
                     id = m.info.id,
                     profileId = profileId,
                     sessionId = sessionId,
                     role = m.info.roleLabel,
-                    seq = seq,
+                    seq = effectiveSeq,
                     rawJson = m.info.toString(),
                 ),
             )
