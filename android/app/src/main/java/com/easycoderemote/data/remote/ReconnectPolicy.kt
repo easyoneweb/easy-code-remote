@@ -18,7 +18,7 @@ class ReconnectPolicy(
         val base = (baseDelayMs shl exponent).coerceAtMost(maxDelayMs)
         attempt++
         val jitter = if (jitterMs > 0) Random.nextLong(-jitterMs, jitterMs + 1) else 0
-        return (base + jitter).coerceAtLeast(100)
+        return (base + jitter).coerceIn(100, maxDelayMs)
     }
 
     fun reset() {

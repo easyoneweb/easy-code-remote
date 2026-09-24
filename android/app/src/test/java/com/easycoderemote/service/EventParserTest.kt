@@ -2,6 +2,7 @@ package com.easycoderemote.service
 
 import com.easycoderemote.data.model.Envelope
 import com.easycoderemote.util.APP_JSON
+import com.easycoderemote.util.str
 import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.decodeFromString
 import org.junit.Test

@@ -48,7 +48,7 @@ class Repository(private val appContext: Context) {
     private val context: Context = appContext.applicationContext
 
     val profileStore = ProfileStore(context)
-    private val securityStore = SecurityStore(profileStore)
+    val securityStore = SecurityStore(profileStore)
     private val db: AppDatabase by lazy { AppDatabase.get(context) }
 
     private var configCache: Pair<ServerConfigDto, Long>? = null
