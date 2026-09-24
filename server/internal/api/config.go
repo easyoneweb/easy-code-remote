@@ -5,18 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
-	"sync"
 	"time"
 )
 
 // ConfigCacheTTL bounds how often the kilo configuration is refreshed.
 const ConfigCacheTTL = 60 * time.Second
-
-type configCache struct {
-	mu      sync.Mutex
-	data    any
-	fetched time.Time
-}
 
 // HandleConfig returns the cached kilo configuration for phone pickers.
 func (s *Server) HandleConfig(w http.ResponseWriter, r *http.Request) {

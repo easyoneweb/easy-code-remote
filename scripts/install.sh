@@ -31,7 +31,7 @@ systemctl --no-pager status easy-code-remote --lines=0 || true
 echo
 echo "Reminders:"
 echo "  - the phone connects to https://<public-ip>:8443 (Bearer token from"
-echo "    $EASY_CODE_REMOTE_CONFIG_DIR/config.json or ~/.config/easy-code-remote/config.json)"
+echo "    /home/$USER_NAME/.config/easy-code-remote/config.json)"
 echo "  - open the firewall:  sudo ufw allow 8443/tcp"
 echo "  - forward TCP 8443 on the router to this PC"
 echo "  - 'easy-code-remote doctor' checks the environment; 'token rotate' re-issues the token"
