@@ -85,13 +85,13 @@ func TestWhitelist(t *testing.T) {
 		"message.updated", "message.removed", "message.part.updated", "message.part.removed",
 		"permission.asked", "permission.replied", "question.asked", "question.replied",
 		"question.rejected", "server.connected", "engine.connected", "engine.disconnected",
-		"todo.updated", "server.heartbeat", "session.diff"}
+		"todo.updated", "session.diff"}
 	for _, t2 := range allowed {
 		if !Whitelisted(t2) {
 			t.Fatalf("%q should be whitelisted", t2)
 		}
 	}
-	blocked := []string{"sync", "unknown.thing", "file.written", "step_start"}
+	blocked := []string{"sync", "unknown.thing", "file.written", "step_start", "server.heartbeat"}
 	for _, t2 := range blocked {
 		if Whitelisted(t2) {
 			t.Fatalf("%q should NOT be whitelisted", t2)

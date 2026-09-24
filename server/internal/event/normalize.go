@@ -142,8 +142,7 @@ func Whitelisted(t string) bool {
 		strings.HasPrefix(t, "question."),
 		strings.HasPrefix(t, "todo."),
 		strings.HasPrefix(t, "engine."),
-		t == "server.connected",
-		t == "server.heartbeat":
+		t == "server.connected":
 		return true
 	}
 	return false
