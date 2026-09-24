@@ -49,6 +49,10 @@ class SessionStatusComputer {
         if (pending.questions.isNotEmpty()) pendingQ.add(sessionId) else pendingQ.remove(sessionId)
     }
 
+    /** True when this computer holds authoritative state for the session. */
+    fun knows(sessionId: String): Boolean =
+        sessionId in rawStatus || sessionId in pendingPerm || sessionId in pendingQ
+
     /** Returns (derived status, waitingReason). */
     fun status(sessionId: String, raw: String? = null): Pair<String, String?> {
         raw?.takeIf { it.isNotBlank() }?.let { rawStatus[sessionId] = it }

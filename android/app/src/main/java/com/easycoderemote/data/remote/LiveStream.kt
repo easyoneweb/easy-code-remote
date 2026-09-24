@@ -68,6 +68,9 @@ class LiveStream(
     }
 
     private suspend fun awaitSource(cursor: Long): Boolean = suspendCancellableCoroutine { cont ->
+        // Reset the silence window per attempt: a stale lastActivityMs from a
+        // previous long-silent connection must not kill the new one instantly.
+        watchdog.activity()
         val url = baseUrl.trimEnd('/') + "/api/v1/events" +
             if (cursor > 0) "?cursor=$cursor" else ""
         val request = Request.Builder()

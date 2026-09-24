@@ -137,6 +137,10 @@ class EventApplier(
 
     private suspend fun refreshSessionStatus(sessionId: String) {
         val existing = sessionDao.observeSession(profileId, sessionId).first() ?: return
+        // Only override the stored status when this applier has authoritative
+        // state (raw status events or pending flags) for the session; a fresh
+        // applier on the approval-screen path must not flip running→idle.
+        if (!statusComputer.knows(sessionId)) return
         val (status, reason) = statusComputer.status(sessionId)
         sessionDao.upsert(existing.copy(status = status, waitingReason = reason))
     }

@@ -20,6 +20,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * The single SSE owner (plan §5.11). Holds the LiveStream, persists the cursor
@@ -40,6 +42,7 @@ class LiveSyncService : LifecycleService() {
     private var profileId: String? = null
 
     private val sessionStatuses = HashMap<String, String>()
+    private val envelopeMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
@@ -110,13 +113,15 @@ class LiveSyncService : LifecycleService() {
     }
 
     private suspend fun handleEnvelope(envelope: Envelope) {
-        val pid = profileId ?: return
-        if (envelope.cursor > 0) profileStore.setCursor(pid, envelope.cursor)
-        val event = EventParser.parse(envelope) ?: return
-        LiveEventBus.emit(event)
-        if (event is AppEvent.ResyncRequired) runCatching { resync() }
-        applier?.apply(event)
-        notifyFor(event)
+        envelopeMutex.withLock {
+            val pid = profileId ?: return@withLock
+            if (envelope.cursor > 0) profileStore.setCursor(pid, envelope.cursor)
+            val event = EventParser.parse(envelope) ?: return@withLock
+            LiveEventBus.emit(event)
+            if (event is AppEvent.ResyncRequired) runCatching { resync() }
+            applier?.apply(event)
+            notifyFor(event)
+        }
     }
 
     private fun handleFailure(t: Throwable?) {
