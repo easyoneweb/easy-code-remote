@@ -37,7 +37,8 @@ class EventApplier(
 
     suspend fun apply(event: AppEvent) {
         when (event) {
-            is AppEvent.SessionCreated, is AppEvent.SessionUpdated -> upsertSession(event.sessionID, event.session, event.data)
+            is AppEvent.SessionCreated -> upsertSession(event.sessionID, event.session, event.data)
+            is AppEvent.SessionUpdated -> upsertSession(event.sessionID, event.session, event.data)
             is AppEvent.SessionDeleted -> deleteSession(event.sessionID)
             is AppEvent.SessionStatus -> {
                 statusComputer.onRawStatus(event.sessionID, event.status)
@@ -62,7 +63,12 @@ class EventApplier(
                 persistPending("question", event.sessionID, event.data)
                 refreshSessionStatus(event.sessionID)
             }
-            is AppEvent.QuestionReplied, is AppEvent.QuestionRejected -> {
+            is AppEvent.QuestionReplied -> {
+                statusComputer.onQuestionReplied(event.sessionID)
+                clearPending("question", event.sessionID)
+                refreshSessionStatus(event.sessionID)
+            }
+            is AppEvent.QuestionRejected -> {
                 statusComputer.onQuestionReplied(event.sessionID)
                 clearPending("question", event.sessionID)
                 refreshSessionStatus(event.sessionID)

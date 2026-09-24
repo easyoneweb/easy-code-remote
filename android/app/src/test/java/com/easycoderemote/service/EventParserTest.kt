@@ -1,5 +1,6 @@
 package com.easycoderemote.service
 
+import com.easycoderemote.data.model.AppEvent
 import com.easycoderemote.data.model.Envelope
 import com.easycoderemote.util.APP_JSON
 import com.easycoderemote.util.str
@@ -70,8 +71,9 @@ class EventParserTest {
 
     @Test
     fun rawDeltaTypeAlsoParses() {
+        // A raw message.part.delta (un-normalized server) carries data.delta as a string.
         val json = """{"type":"message.part.delta","sessionID":"ses_1","messageID":"msg_1",
-            "partID":"prt_1","data":{"part":{"id":"prt_1","type":"text","text":"chunk"}},"cursor":6}"""
+            "partID":"prt_1","data":{"delta":"chunk","field":"text"},"cursor":6}"""
         val event = EventParser.parse(envelope(json))
         val p = event as AppEvent.PartUpdated
         assertThat(p.deltaText).isEqualTo("chunk")

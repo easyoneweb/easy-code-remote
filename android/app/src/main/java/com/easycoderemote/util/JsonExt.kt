@@ -60,7 +60,7 @@ fun JsonElement?.sumNumbers(): Long {
     fun walk(e: JsonElement?) {
         when (e) {
             is JsonPrimitive -> if (e !is JsonNull) e.content.toLongOrNull()?.let { total += it }
-            is JsonObject -> e.values.forEach { walk(it.value) }
+            is JsonObject -> e.values.forEach { walk(it) }
             is JsonArray -> e.forEach { walk(it) }
             else -> Unit
         }

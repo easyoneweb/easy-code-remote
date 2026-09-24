@@ -8,6 +8,10 @@ import kotlinx.coroutines.flow.StateFlow
 object LiveSyncState {
     private val _state = MutableStateFlow(LiveStream.StreamState.Stopped)
     val state: StateFlow<LiveStream.StreamState> = _state
+
+    fun update(value: LiveStream.StreamState) {
+        _state.value = value
+    }
 }
 
 /** Foreground/background visibility, tracked by MainActivity. */

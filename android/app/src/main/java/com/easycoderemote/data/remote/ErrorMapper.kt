@@ -11,10 +11,10 @@ import kotlinx.serialization.json.decodeFromJsonElement
  */
 class ApiException(
     val code: String,
-    val message: String,
+    override val message: String,
     val retryable: Boolean,
     val httpStatus: Int,
-) : Exception("$code: $message")
+) : Exception(message)
 
 object ErrorMapper {
 

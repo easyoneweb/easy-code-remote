@@ -106,7 +106,7 @@ class LiveSyncService : LifecycleService() {
             scope = serviceScope,
             cursorProvider = { profileStore.cursor(profileId) },
             onEnvelope = { env -> serviceScope.launch { handleEnvelope(env) } },
-            onState = { state -> LiveSyncState.state.value = state },
+            onState = { state -> LiveSyncState.update(state) },
             onFailure = { t -> handleFailure(t) },
         )
         liveStream?.start()
@@ -202,7 +202,7 @@ class LiveSyncService : LifecycleService() {
 
     override fun onDestroy() {
         tearDown()
-        LiveSyncState.state.value = LiveStream.StreamState.Stopped
+        LiveSyncState.update(LiveStream.StreamState.Stopped)
         serviceScope.cancel()
         super.onDestroy()
     }

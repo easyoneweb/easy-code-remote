@@ -9,6 +9,7 @@ import com.easycoderemote.util.jsonObject
 import com.easycoderemote.util.str
 import com.easycoderemote.util.string
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 
 /**
@@ -44,8 +45,15 @@ object EventParser {
                 val part = partObject?.let {
                     runCatching { APP_JSON.decodeFromJsonElement(PartDto.serializer(), it) }.getOrNull()
                 }
-                val delta = d?.jsonObject("delta")?.string("textDelta")
-                    ?: partObject?.string("text")?.takeIf { part?.type == "text" }
+                // A delta is signalled ONLY by data.delta (object textDelta from the
+                // normalized stream, or a plain string from a raw message.part.delta).
+                // A full data.part without data.delta is a replace (plan §5.6).
+                val delta = when (val rawDelta = d?.get("delta")) {
+                    is JsonPrimitive -> rawDelta.content
+                    is JsonObject -> rawDelta.string("textDelta")
+                    null -> null
+                    else -> null
+                }
                 val partId = envelope.partID ?: d?.string("partID").orEmpty()
                 if (partId.isBlank()) null else AppEvent.PartUpdated(
                     sessionID = sid,

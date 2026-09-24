@@ -177,7 +177,7 @@ class ApiClient(
         } catch (e: IOException) {
             throw ErrorMapper.fromTransport(e)
         }
-        response.use { resp ->
+        return response.use { resp ->
             val text = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) throw ErrorMapper.fromResponse(text, resp.code)
             text

@@ -27,7 +27,8 @@ class ErrorMapperTest {
     fun plainBodyFallsBackToHttpCode() {
         val e = ErrorMapper.fromResponse("oops", 500)
         assertThat(e.code).isEqualTo("http_500")
-        assertThat(e.retryable).isTrue()
+        // 500 is "server bug — report" per the plan table: not retryable.
+        assertThat(e.retryable).isFalse()
     }
 
     @Test

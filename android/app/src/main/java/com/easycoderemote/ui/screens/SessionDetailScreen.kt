@@ -190,13 +190,14 @@ private fun PartView(part: PartEntity) {
 private fun ToolChip(part: PartEntity) {
     var expanded by remember { mutableStateOf(false) }
     val label = part.tool ?: part.type
+    val stateSuffix = part.state?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
     Card(
         modifier = Modifier.padding(vertical = 4.dp).clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(Modifier.padding(8.dp)) {
             Text(
-                "$label${if (part.state.isNotBlank()) " · ${part.state}" else ""}",
+                "$label$stateSuffix",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
             )

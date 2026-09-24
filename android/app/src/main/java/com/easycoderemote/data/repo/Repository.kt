@@ -25,6 +25,7 @@ import com.easycoderemote.service.ServiceStarter
 import com.easycoderemote.util.APP_JSON
 import java.net.URL
 import java.util.UUID
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -44,6 +45,7 @@ data class TranscriptMessage(val message: MessageEntity, val parts: List<PartEnt
  * App-wide facade for ViewModels and UI. Room + DataStore + KeyStore are here;
  * the foreground service owns the SSE connection.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class Repository(private val appContext: Context) {
     private val context: Context = appContext.applicationContext
 
