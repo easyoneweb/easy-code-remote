@@ -22,7 +22,10 @@ gateway/account. See `README.md` (deployment) and `docs/protocol.md` (phone↔se
   - `TEMP.md` / `TEMP_*.md` — developer decision logs; must stay untracked.
   - `config.json`, `*.pem`, `*.key` — runtime credentials / TLS material.
   - the `easy-code-remote` binary, any Kilo database files (`kilo.db*`).
-- Never push.
+- Push: the repository is published at `git@github.com:easyoneweb/easy-code-remote.git`
+  (default branch `main`). Pushing to the remote is allowed and expected when the user
+  asks for it (or per the release process); always confirm the user's intent before
+  pushing, and never force-push to shared branches.
 
 ## Changelog rules
 
