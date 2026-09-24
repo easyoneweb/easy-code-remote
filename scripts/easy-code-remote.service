@@ -1,0 +1,22 @@
+[Unit]
+Description=easy-code-remote companion server (Kilo Code phone access)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/easy-code-remote serve
+Restart=on-failure
+RestartSec=3
+# Replace __USER__ with the desktop user that owns the Kilo data directory
+# (install.sh does this automatically).
+User=__USER__
+Environment=EASY_CODE_REMOTE_CONFIG_DIR=/home/__USER__/.config/easy-code-remote
+# Security hardening (the server binds its own TLS port and spawns kilo).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

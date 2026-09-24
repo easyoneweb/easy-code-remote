@@ -1,0 +1,21 @@
+# TEMP developer decision logs — never commit
+TEMP.md
+TEMP_*.md
+
+# Build artifacts
+/easy-code-remote
+/server/easy-code-remote
+*.exe
+
+# Runtime credentials / TLS material — never commit
+config.json
+*.pem
+*.key
+kilo.db
+kilo.db-shm
+kilo.db-wal
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
