@@ -76,11 +76,21 @@ class LiveStream(
         watchdog.activity()
         val url = baseUrl.trimEnd('/') + "/api/v1/events" +
             if (cursor > 0) "?cursor=$cursor" else ""
-        val request = Request.Builder()
-            .url(url)
-            .header("Authorization", "Bearer $token")
-            .header("Accept", "text/event-stream")
-            .build()
+        // A malformed header must never crash the app: treat it as a failed
+        // connection and let the reconnect loop retry (plan §11: no crash).
+        val request = runCatching {
+            Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer ${token.trim()}")
+                .header("Accept", "text/event-stream")
+                .build()
+        }.getOrNull()
+        if (request == null) {
+            Log.e(TAG, "failed to build SSE request (token contains invalid characters)")
+            onFailure(IllegalArgumentException("Token contains invalid characters"))
+            if (!cont.isCompleted) cont.resume(false)
+            return@suspendCancellableCoroutine
+        }
         val factory = EventSources.createFactory(client)
         val es = factory.newEventSource(request, object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {

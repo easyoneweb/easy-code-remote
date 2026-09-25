@@ -10,15 +10,26 @@ import com.easycoderemote.security.KeyStoreCrypto
  */
 class SecurityStore(private val profileStore: ProfileStore) {
 
+    companion object {
+        /**
+         * Tokens are pasted from a terminal/file and often carry a trailing
+         * newline — stored verbatim, OkHttp rejects the Authorization header
+         * ("Unexpected char 0x0a in ... value") and the app crashes on SSE connect.
+         * Normalizes to the bare token; returns null when nothing usable remains.
+         */
+        fun normalizeToken(token: String): String? = token.trim().takeIf { it.isNotBlank() }
+    }
+
     suspend fun saveToken(profileId: String, token: String) {
+        val normalized = normalizeToken(token) ?: return
         val alias = alias(profileId)
-        val blob = KeyStoreCrypto.encrypt(alias, token)
+        val blob = KeyStoreCrypto.encrypt(alias, normalized)
         profileStore.setTokenBlob(profileId, blob)
     }
 
     suspend fun loadToken(profileId: String): String? {
         val blob = profileStore.tokenBlob(profileId) ?: return null
-        return KeyStoreCrypto.decrypt(alias(profileId), blob)
+        return KeyStoreCrypto.decrypt(alias(profileId), blob)?.let { normalizeToken(it) }
     }
 
     suspend fun deleteToken(profileId: String) {

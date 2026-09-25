@@ -29,11 +29,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
  */
 class ApiClient(
     baseUrl: String,
-    private val token: String,
+    token: String,
     pinnedFingerprint: String?,
     timeoutSeconds: Long = 30,
 ) {
     private val baseUrl: String = baseUrl.trimEnd('/')
+    // Tokens are pasted; a stray newline/space would make OkHttp reject the header.
+    private val token: String = token.trim()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     // Shared builder: TOFU-pinned TLS + hostname-verification bypass when pinned.
