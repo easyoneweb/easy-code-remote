@@ -19,5 +19,3 @@ kilo.db-wal
 .DS_Store
 .idea/
 .vscode/
-# Screen recordings (never commit)
-Record_*.mp4
