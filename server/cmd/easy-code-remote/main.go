@@ -158,6 +158,7 @@ func runServe(args []string) error {
 	defer sup.Stop()
 
 	k := kilo.NewClient(cfg.Kilo.Hostname, cfg.Kilo.Port, password)
+	k.Bin = bin
 	st := store.New()
 	apiSrv := api.New(k, st, sup, version, logf)
 	apiSrv.KiloVersion = kiloVersion

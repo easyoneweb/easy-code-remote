@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,6 +29,10 @@ type Client struct {
 	User    string
 	Pass    string
 	HTTP    *http.Client
+	// Bin is the resolved kilo binary path. Required by SessionsAll, which uses
+	// kilo's own `db` CLI (the /session HTTP endpoint is scoped to the serve's
+	// current project and cannot list sessions from other projects).
+	Bin string
 }
 
 // NewClient returns a Client for the given endpoint and password.
@@ -147,7 +152,9 @@ type StatusEntry struct {
 	Type string `json:"type"`
 }
 
-// Sessions lists all sessions from kilo /session.
+// Sessions lists all sessions from kilo /session. NOTE: kilo scopes this
+// endpoint to the project of the serve process's working directory, so it only
+// returns the current project's sessions.
 func (c *Client) Sessions(ctx context.Context) ([]json.RawMessage, error) {
 	data, status, err := c.Get(ctx, "/session", nil)
 	if err != nil {
@@ -161,6 +168,188 @@ func (c *Client) Sessions(ctx context.Context) ([]json.RawMessage, error) {
 		return nil, fmt.Errorf("decode /session: %w", err)
 	}
 	return out, nil
+}
+
+// sessionsAllQuery selects every column needed to rebuild the /session item
+// shape. Order is positional and must match sessionsAllColumns.
+const sessionsAllQuery = `SELECT id, project_id, parent_id, slug, directory, path, title, version, ` +
+	`summary_additions, summary_deletions, summary_files, cost, ` +
+	`tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, ` +
+	`agent, model, metadata, time_created, time_updated, time_compacting, time_archived ` +
+	`FROM session`
+
+// SessionsAll returns every session across all projects, most recently updated
+// first. Kilo's /session HTTP endpoint is scoped to the serve's current project
+// (observed: `kilo serve` binds to the project of its working directory), so the
+// phone would never see sessions from other projects. The shared kilo.db stores
+// all projects' sessions, and kilo's own `db` CLI is the supported way to query
+// it — the companion server never opens the DB itself.
+func (c *Client) SessionsAll(ctx context.Context) ([]json.RawMessage, error) {
+	if c.Bin == "" {
+		return nil, fmt.Errorf("SessionsAll: kilo binary path is empty")
+	}
+	cmd := exec.CommandContext(ctx, c.Bin, "db", sessionsAllQuery)
+	cmd.Env = append(os.Environ(), "KILO_NO_UPDATE_NOTIFIER=true")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("kilo db: %w: %s", err, firstLine(out))
+	}
+	rows, err := parseTSVRows(out)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]json.RawMessage, 0, len(rows))
+	for _, row := range rows {
+		info, ok := sessionInfoFromRow(row)
+		if !ok {
+			continue
+		}
+		raw, err := json.Marshal(info)
+		if err != nil {
+			continue
+		}
+		items = append(items, raw)
+	}
+	return items, nil
+}
+
+// sessionsAllColumns is the positional header of sessionsAllQuery's output.
+var sessionsAllColumns = []string{
+	"id", "project_id", "parent_id", "slug", "directory", "path", "title", "version",
+	"summary_additions", "summary_deletions", "summary_files", "cost",
+	"tokens_input", "tokens_output", "tokens_reasoning", "tokens_cache_read", "tokens_cache_write",
+	"agent", "model", "metadata", "time_created", "time_updated", "time_compacting", "time_archived",
+}
+
+// parseTSVRows parses `kilo db` output: a header line followed by tab-separated
+// rows. Rows whose field count does not match the header are skipped.
+func parseTSVRows(out []byte) ([]map[string]string, error) {
+	// Trim only the trailing newline — TrimSpace would also strip trailing tabs
+	// of rows whose last column is empty, desyncing the field count.
+	text := string(bytes.TrimSuffix(out, []byte{'\n'}))
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		return nil, nil
+	}
+	// `kilo db` may prefix INFO log lines; find the header by its first column.
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(l, "id\t") {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return nil, fmt.Errorf("kilo db: unexpected output (no header row)")
+	}
+	header := strings.Split(lines[start], "\t")
+	rows := make([]map[string]string, 0, len(lines)-start-1)
+	for _, l := range lines[start+1:] {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		fields := strings.Split(l, "\t")
+		if len(fields) != len(header) {
+			continue // defensive: tabs inside a value would desync the row
+		}
+		row := make(map[string]string, len(header))
+		for i, h := range header {
+			row[h] = fields[i]
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+// sessionInfoFromRow rebuilds the map shape kilo's /session endpoint returns
+// (id/projectID/directory/path/slug/title/summary/cost/tokens/time/agent/model/
+// metadata/version) from one `kilo db` row.
+func sessionInfoFromRow(row map[string]string) (map[string]any, bool) {
+	id := row["id"]
+	if id == "" {
+		return nil, false
+	}
+	info := map[string]any{
+		"id":        id,
+		"slug":      row["slug"],
+		"title":     row["title"],
+		"directory": row["directory"],
+		"path":      row["path"],
+		"projectID": row["project_id"],
+		"version":   row["version"],
+		"cost":      parseFloat(row["cost"]),
+		"summary": map[string]any{
+			"additions": parseFloat(row["summary_additions"]),
+			"deletions": parseFloat(row["summary_deletions"]),
+			"files":     parseFloat(row["summary_files"]),
+		},
+		"tokens": map[string]any{
+			"input":     parseFloat(row["tokens_input"]),
+			"output":    parseFloat(row["tokens_output"]),
+			"reasoning": parseFloat(row["tokens_reasoning"]),
+			"cache": map[string]any{
+				"read":  parseFloat(row["tokens_cache_read"]),
+				"write": parseFloat(row["tokens_cache_write"]),
+			},
+		},
+		"time": map[string]any{
+			"created": parseFloat(row["time_created"]),
+			"updated": parseFloat(row["time_updated"]),
+		},
+	}
+	if v := row["parent_id"]; v != "" {
+		info["parentID"] = v
+	}
+	if v := row["agent"]; v != "" {
+		info["agent"] = v
+	}
+	if v := row["model"]; v != "" {
+		// model is stored as a JSON string; keep it an object when valid.
+		if model, ok := parseJSONField(v); ok {
+			info["model"] = model
+		} else {
+			info["model"] = v
+		}
+	}
+	if v := row["metadata"]; v != "" {
+		if meta, ok := parseJSONField(v); ok {
+			info["metadata"] = meta
+		}
+	}
+	if v := row["time_compacting"]; v != "" {
+		info["time"].(map[string]any)["compacting"] = parseFloat(v)
+	}
+	if row["time_archived"] != "" {
+		info["archived"] = true
+	}
+	return info, true
+}
+
+func parseFloat(s string) any {
+	if s == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+func parseJSONField(s string) (any, bool) {
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return nil, false
+	}
+	return v, true
+}
+
+func firstLine(b []byte) string {
+	s := string(b)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // SessionStatus returns the kilo /session/status map.

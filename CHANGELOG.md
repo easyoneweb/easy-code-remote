@@ -45,3 +45,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   contained a trailing newline/whitespace (OkHttp rejects control characters in the
   `Authorization` header). Tokens are now trimmed on save, on load, and when the
   header is built, and a malformed header can no longer crash the SSE reconnect loop.
+- `/api/v1/sessions` returned only the current project's sessions: kilo's `/session`
+  HTTP endpoint is scoped to the serve process's working directory, so sessions from
+  other projects (e.g. a session running in another VSCode window) were invisible to
+  the phone. The server now seeds the session list from kilo's own `db` CLI against
+  the shared `kilo.db` (global across projects), falling back to the scoped HTTP
+  endpoint when the kilo binary is unavailable.

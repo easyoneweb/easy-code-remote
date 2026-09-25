@@ -55,10 +55,18 @@ func New() *Store {
 }
 
 // Resync fully refreshes sessions, statuses and pending lists from kilo.
+//
+// Session list source: kilo's /session HTTP endpoint is scoped to the serve
+// process's current project, so it cannot see sessions from other projects.
+// SessionsAll uses kilo's own `db` CLI against the shared kilo.db instead and
+// falls back to the scoped /session endpoint if that is unavailable.
 func (s *Store) Resync(ctx context.Context, c *kilo.Client) error {
-	sessions, err := c.Sessions(ctx)
+	sessions, err := c.SessionsAll(ctx)
 	if err != nil {
-		return err
+		sessions, err = c.Sessions(ctx) // fallback: current project only
+		if err != nil {
+			return err
+		}
 	}
 	statuses, err := c.SessionStatus(ctx)
 	if err != nil {
