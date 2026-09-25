@@ -274,8 +274,9 @@ class EventApplier(
                 )
             }
         }
-        // Retention: per-session storage bound. Generous (1000) so paginated
-        // history survives (plan §5.8: Room retains full history for back-paging).
+        // Retention: per-session storage bound (5000). Generous so paginated history
+        // survives and older pages stay cacheable (plan §5.8: Room retains full
+        // history for back-paging; the archived-session purge bounds total growth).
         messageDao.trimSession(profileId, sessionId)
     }
 

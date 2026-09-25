@@ -90,6 +90,9 @@ fun SessionDetailScreen(
     val sending by viewModel.sending.collectAsStateWithLifecycle()
     val compacting by viewModel.compacting.collectAsStateWithLifecycle()
     val config by viewModel.config.collectAsStateWithLifecycle()
+    val agent by viewModel.agent.collectAsStateWithLifecycle()
+    val modelElem by viewModel.model.collectAsStateWithLifecycle()
+    val variant by viewModel.variant.collectAsStateWithLifecycle()
 
     var tab by remember { mutableStateOf(0) }
 
@@ -136,11 +139,11 @@ fun SessionDetailScreen(
                     onStop = viewModel::abort,
                     running = session?.status == "running",
                     config = config,
-                    agent = viewModel.agent.value,
+                    agent = agent,
                     onAgentChange = viewModel::selectAgent,
-                    model = (viewModel.model.value as? JsonPrimitive)?.content,
+                    model = (modelElem as? JsonPrimitive)?.content,
                     onModelChange = viewModel::selectModel,
-                    variant = viewModel.variant.value,
+                    variant = variant,
                     onVariantChange = viewModel::selectVariant,
                 )
             }
@@ -207,8 +210,12 @@ private fun TranscriptList(
             item { Text("No messages yet. Send something below.", modifier = Modifier.padding(24.dp)) }
         }
         items(items, key = { it.message.id }) { tm ->
+            // The newest message is the one being appended to (streaming text): only
+            // it gets the debounced markdown re-render (plan §5.7).
+            val isStreaming = items.firstOrNull()?.message?.id == tm.message.id
             MessageBubble(
                 tm = tm,
+                isStreaming = isStreaming,
                 onCopy = {
                     val raw = tm.parts
                         .filter { it.type != "tool" && it.tool == null }
@@ -228,7 +235,7 @@ private fun TranscriptList(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(tm: TranscriptMessage, onCopy: () -> Unit) {
+private fun MessageBubble(tm: TranscriptMessage, isStreaming: Boolean, onCopy: () -> Unit) {
     val message = tm.message
     val isUser = message.role == "user"
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
@@ -251,21 +258,21 @@ private fun MessageBubble(tm: TranscriptMessage, onCopy: () -> Unit) {
             color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Column(Modifier.padding(10.dp)) {
-                tm.parts.forEach { part -> PartView(part, isUser) }
+                tm.parts.forEach { part -> PartView(part, isUser, isStreaming) }
             }
         }
     }
 }
 
 @Composable
-private fun PartView(part: PartEntity, isUser: Boolean) {
+private fun PartView(part: PartEntity, isUser: Boolean, isStreaming: Boolean) {
     if (part.type == "tool" || part.tool != null) {
         ToolChip(part)
     } else if (isUser) {
         // User input stays plain text (plan §5.7): no markdown, no layout spoofing.
         Text(part.text, style = MaterialTheme.typography.bodyMedium)
     } else {
-        MarkdownText(part.text, isStreaming = part.state == "running")
+        MarkdownText(part.text, isStreaming = isStreaming)
     }
 }
 

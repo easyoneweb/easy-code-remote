@@ -60,7 +60,7 @@ interface MessageDao {
 
     @Query(
         """DELETE FROM messages WHERE profileId = :profileId AND sessionId = :sessionId AND id NOT IN
-           (SELECT id FROM messages WHERE profileId = :profileId AND sessionId = :sessionId ORDER BY seq DESC LIMIT 1000)""",
+           (SELECT id FROM messages WHERE profileId = :profileId AND sessionId = :sessionId ORDER BY seq DESC LIMIT 5000)""",
     )
     suspend fun trimSession(profileId: String, sessionId: String)
 

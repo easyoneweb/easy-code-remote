@@ -94,6 +94,26 @@ class TranscriptWindowTest {
     }
 
     @Test
+    fun paginationExtendsBeyondCap() {
+        // Back-paging must never be a no-op once the window is full: older pages
+        // extend the window freely (eviction only bounds live-edge growth).
+        val w = TranscriptWindow(maxSize = 3)
+        w.onRoom(listOf(msg("m4", 4), msg("m5", 5)))
+        val out = w.onRoom((1L..5L).map { msg("m$it", it) })
+        assertThat(ids(out)).containsExactly("m5", "m4", "m3", "m2", "m1").inOrder()
+    }
+
+    @Test
+    fun liveGrowthStillEvictsAtCap() {
+        // Newest SSE messages bound the window: once the cap is hit, the oldest
+        // items (still in Room) leave the window to make room.
+        val w = TranscriptWindow(maxSize = 3)
+        w.onRoom(listOf(msg("m4", 4), msg("m5", 5)))
+        val out = w.onRoom((1L..6L).map { msg("m$it", it) })
+        assertThat(ids(out)).containsExactly("m6", "m5", "m4").inOrder()
+    }
+
+    @Test
     fun refreshWithIdenticalHistoryKeepsWindowStable() {
         val w = TranscriptWindow(maxSize = 10)
         w.onRoom((1L..5L).map { msg("m$it", it) })
