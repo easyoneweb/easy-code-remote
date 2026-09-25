@@ -91,9 +91,12 @@ fun ProfileSetupScreen(
                     }
                 }
 
-                ProfileSetupViewModel.Step.TOKEN, ProfileSetupViewModel.Step.CONFIRM -> {
+                ProfileSetupViewModel.Step.FINGERPRINT -> {
+                    Text("Verify the server certificate", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "Confirm the server certificate fingerprint, then enter your bearer token.",
+                        "This is the first connection to this server. Confirm the fingerprint below matches the one shown by `easy-code-remote status` on your PC. " +
+                            "If it does not match, do not continue.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -105,8 +108,23 @@ fun ProfileSetupScreen(
                             fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.primary,
                         )
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(16.dp))
                     }
+                    Button(
+                        onClick = viewModel::confirmFingerprint,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Trust this certificate") }
+                    OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
+                }
+
+                ProfileSetupViewModel.Step.TOKEN, ProfileSetupViewModel.Step.CONFIRM -> {
+                    Text("Enter the bearer token", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "The token is in the server config (run `easy-code-remote status` on the PC).",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = state.token,
                         onValueChange = viewModel::setToken,
@@ -122,7 +140,7 @@ fun ProfileSetupScreen(
                             onClick = viewModel::confirmAndSave,
                             enabled = state.token.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Trust certificate and connect") }
+                        ) { Text("Connect") }
                         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
                     }
                     state.error?.let { Spacer(Modifier.height(8.dp)); ErrorBanner(it) }

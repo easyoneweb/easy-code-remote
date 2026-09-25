@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
 /** Connect wizard state machine: BaseUrl → Probe → Token → Fingerprint confirm → save. */
 class ProfileSetupViewModel(app: Application) : RepoViewModel(app) {
 
-    enum class Step { BASE_URL, PROBE, TOKEN, CONFIRM, DONE }
+    enum class Step { BASE_URL, PROBE, FINGERPRINT, TOKEN, CONFIRM, DONE }
 
     data class UiState(
         val step: Step = Step.BASE_URL,
@@ -40,13 +40,20 @@ class ProfileSetupViewModel(app: Application) : RepoViewModel(app) {
             val next = _state.value.copy(busy = false, probe = result)
             if (result.success) {
                 _state.value = next.copy(
-                    step = Step.TOKEN,
+                    // A collected fingerprint gates on an explicit TOFU confirmation;
+                    // a non-TLS endpoint (http, debug builds) skips straight to token.
+                    step = if (result.fingerprint == null) Step.TOKEN else Step.FINGERPRINT,
                     fingerprint = result.fingerprint ?: "",
                 )
             } else {
                 _state.value = next.copy(error = result.error ?: "Connection failed")
             }
         }
+    }
+
+    /** TOFU gate: the user explicitly accepts the presented fingerprint. */
+    fun confirmFingerprint() {
+        _state.value = _state.value.copy(step = Step.TOKEN)
     }
 
     fun setToken(value: String) {
