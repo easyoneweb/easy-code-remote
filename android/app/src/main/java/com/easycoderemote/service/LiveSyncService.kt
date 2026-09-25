@@ -1,6 +1,7 @@
 package com.easycoderemote.service
 
 import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.easycoderemote.EasyCodeRemoteApp
@@ -30,6 +31,10 @@ import kotlinx.coroutines.sync.withLock
  */
 class LiveSyncService : LifecycleService() {
 
+    private companion object {
+        const val TAG = "ECR.Svc"
+    }
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var profileStore: ProfileStore
     private lateinit var securityStore: SecurityStore
@@ -43,9 +48,11 @@ class LiveSyncService : LifecycleService() {
 
     private val sessionStatuses = HashMap<String, String>()
     private val envelopeMutex = Mutex()
+    private val connectMutex = Mutex()
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "service created")
         val repo = (application as EasyCodeRemoteApp).repository
         profileStore = repo.profileStore
         securityStore = repo.securityStore
@@ -55,7 +62,15 @@ class LiveSyncService : LifecycleService() {
 
         lifecycleScope.launch {
             profileStore.activeProfileId.collect { id ->
-                if (id != profileId) reconnect(id)
+                Log.i(TAG, "activeProfileId -> $id (current=${profileId})")
+                if (id != profileId) {
+                    if (id == null) {
+                        tearDown()
+                        stopSelf()
+                    } else {
+                        connectIfNeeded(id)
+                    }
+                }
             }
         }
     }
@@ -69,7 +84,19 @@ class LiveSyncService : LifecycleService() {
     private suspend fun ensureConnected() {
         if (liveStream != null) return
         val id = profileStore.activeProfileId.first() ?: run { stopSelf(); return }
-        connect(id)
+        connectIfNeeded(id)
+    }
+
+    /** Serializes connection attempts: onStartCommand and the profile collector
+     *  both want to connect, and must not spin up two LiveStreams. */
+    private suspend fun connectIfNeeded(id: String) {
+        connectMutex.withLock {
+            if (liveStream != null) {
+                Log.i(TAG, "connectIfNeeded($id): already connected")
+                return@withLock
+            }
+            connect(id)
+        }
     }
 
     private suspend fun reconnect(id: String?) {
@@ -78,14 +105,21 @@ class LiveSyncService : LifecycleService() {
             stopSelf()
             return
         }
-        connect(id)
+        connectIfNeeded(id)
     }
 
     private suspend fun connect(profileId: String) {
         this.profileId = profileId
+        Log.i(TAG, "connect($profileId)")
         val profile: Profile = profileStore.profiles.first().firstOrNull { it.id == profileId }
-            ?: run { stopSelf(); return }
-        val token = securityStore.loadToken(profileId) ?: run { stopSelf(); return }
+            ?: run { Log.e(TAG, "profile not found"); stopSelf(); return }
+        val token = securityStore.loadToken(profileId)
+        if (token == null) {
+            Log.e(TAG, "no token for profile; stopping")
+            stopSelf()
+            return
+        }
+        Log.i(TAG, "token loaded (${token.length} chars)")
 
         db = AppDatabase.get(this)
         applier = EventApplier(
@@ -97,7 +131,8 @@ class LiveSyncService : LifecycleService() {
         )
         api = ApiClient(profile.baseUrl, token, profile.fingerprint)
 
-        runCatching { resync() }
+        val resyncResult = runCatching { resync() }
+        Log.i(TAG, "initial resync: ${if (resyncResult.isSuccess) "ok" else "FAILED: ${resyncResult.exceptionOrNull()}"}")
 
         liveStream = LiveStream(
             baseUrl = profile.baseUrl,
@@ -110,6 +145,7 @@ class LiveSyncService : LifecycleService() {
             onFailure = { t -> handleFailure(t) },
         )
         liveStream?.start()
+        Log.i(TAG, "LiveStream started for ${profile.baseUrl}")
     }
 
     private suspend fun handleEnvelope(envelope: Envelope) {
@@ -117,6 +153,7 @@ class LiveSyncService : LifecycleService() {
             val pid = profileId ?: return@withLock
             if (envelope.cursor > 0) profileStore.setCursor(pid, envelope.cursor)
             val event = EventParser.parse(envelope) ?: return@withLock
+            if (envelope.type != "server.connected") Log.i(TAG, "event: ${envelope.type} sid=${envelope.sessionID}")
             LiveEventBus.emit(event)
             if (event is AppEvent.ResyncRequired) runCatching { resync() }
             applier?.apply(event)
@@ -125,6 +162,7 @@ class LiveSyncService : LifecycleService() {
     }
 
     private fun handleFailure(t: Throwable?) {
+        Log.w(TAG, "stream failure: ${t?.message}", t)
         val isCertMismatch = t is CertificateException ||
             t?.cause is CertificateException ||
             t?.message?.contains("fingerprint", ignoreCase = true) == true
@@ -139,6 +177,7 @@ class LiveSyncService : LifecycleService() {
         val a = api ?: return
         val ap = applier ?: return
         val sessions = a.sessions()
+        Log.i(TAG, "resync: ${sessions.size} sessions")
         ap.replaceAllSessions(sessions)
     }
 

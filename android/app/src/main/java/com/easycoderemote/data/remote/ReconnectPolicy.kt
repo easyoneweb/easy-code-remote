@@ -37,6 +37,8 @@ class Watchdog(
 ) {
     private var lastActivityMs: Long = now()
 
+    fun timeoutMs(): Long = timeoutMs
+
     fun activity() {
         lastActivityMs = now()
     }

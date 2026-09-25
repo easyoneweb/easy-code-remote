@@ -5,15 +5,11 @@ import com.easycoderemote.data.model.PendingDto
 import com.easycoderemote.data.model.ServerConfigDto
 import com.easycoderemote.data.model.SessionDto
 import com.easycoderemote.data.model.SessionMessageDto
-import com.easycoderemote.security.PinnedTrustManager
-import com.easycoderemote.security.defaultTrustManager
-import com.easycoderemote.security.sslContextFor
 import com.easycoderemote.util.APP_JSON
 import com.easycoderemote.util.decodeTolerantArray
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
@@ -40,20 +36,8 @@ class ApiClient(
     private val baseUrl: String = baseUrl.trimEnd('/')
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    private val client: OkHttpClient = run {
-        val builder = OkHttpClient.Builder()
-            .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
-            .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
-        if (baseUrl.startsWith("https://")) {
-            val tm = pinnedFingerprint?.takeIf { it.isNotBlank() }
-                ?.let { PinnedTrustManager(it) }
-                ?: defaultTrustManager()
-            val ctx = sslContextFor(tm)
-            builder.sslSocketFactory(ctx.socketFactory, tm)
-        }
-        builder.build()
-    }
+    // Shared builder: TOFU-pinned TLS + hostname-verification bypass when pinned.
+    private val client: OkHttpClient = OkHttpClients.build(baseUrl, pinnedFingerprint, timeoutSeconds)
 
     suspend fun health(): HealthDto =
         get("/health", auth = false, HealthDto.serializer())

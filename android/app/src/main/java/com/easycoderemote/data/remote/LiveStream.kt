@@ -1,5 +1,6 @@
 package com.easycoderemote.data.remote
 
+import android.util.Log
 import com.easycoderemote.data.model.Envelope
 import com.easycoderemote.util.APP_JSON
 import kotlinx.coroutines.CoroutineScope
@@ -57,10 +58,12 @@ class LiveStream(
     private suspend fun loop() {
         while (active) {
             val cursor = cursorProvider()
+            Log.i(TAG, "connect attempt (cursor=$cursor)")
             onState(StreamState.Connecting)
             val connected = awaitSource(cursor)
             if (!active) break
             if (connected) policy.reset()
+            Log.i(TAG, "connection closed (connected=$connected); reconnecting")
             onState(StreamState.Reconnecting)
             if (active) delay(policy.nextDelayMs())
         }
@@ -81,6 +84,7 @@ class LiveStream(
         val factory = EventSources.createFactory(client)
         val es = factory.newEventSource(request, object : EventSourceListener() {
             override fun onOpen(eventSource: EventSource, response: Response) {
+                Log.i(TAG, "SSE open")
                 watchdog.activity()
                 onState(StreamState.Connected)
             }
@@ -92,10 +96,12 @@ class LiveStream(
             }
 
             override fun onClosed(eventSource: EventSource) {
+                Log.w(TAG, "SSE closed")
                 if (!cont.isCompleted) cont.resume(true)
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                Log.w(TAG, "SSE failure: ${t?.message}", t)
                 if (t != null) onFailure(t)
                 if (!cont.isCompleted) cont.resume(false)
             }
@@ -106,6 +112,7 @@ class LiveStream(
             while (isActive && active) {
                 delay(10_000)
                 if (watchdog.expired()) {
+                    Log.w(TAG, "watchdog: no events for ${watchdog.timeoutMs()} ms, forcing reconnect")
                     es.cancel()
                     break
                 }
@@ -115,5 +122,9 @@ class LiveStream(
             watchdogJob.cancel()
             es.cancel()
         }
+    }
+
+    private companion object {
+        const val TAG = "ECR.SSE"
     }
 }
