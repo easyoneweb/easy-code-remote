@@ -9,11 +9,13 @@ import com.easycoderemote.data.model.ServerConfigDto
 import com.easycoderemote.data.model.SessionDto
 import com.easycoderemote.service.LiveEventBus
 import com.easycoderemote.ui.navigation.Routes
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,6 +34,9 @@ class SessionDetailViewModel(
     private companion object {
         /** Minimum gap between automatic older-page retries after a failure. */
         const val LOAD_OLDER_COOLDOWN_MS = 5_000L
+
+        /** How often the live edge is re-fetched when SSE is unavailable. */
+        const val TRANSCRIPT_POLL_MS = 10_000L
     }
 
     private var lastLoadOlderAttemptMs = 0L
@@ -79,6 +84,15 @@ class SessionDetailViewModel(
                     refreshFromServer()
                     _compacting.value = false
                 }
+            }
+        }
+        // Safety net: refresh the live edge periodically even if the SSE stream is
+        // down, so the transcript never stays stale (e.g. after a phone sleep or a
+        // server restart). storeHistory is idempotent for already-seen messages.
+        viewModelScope.launch {
+            while (isActive) {
+                delay(TRANSCRIPT_POLL_MS)
+                runCatching { repo.fetchMessages(sessionId, limit = 50, before = null) }
             }
         }
     }

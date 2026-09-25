@@ -236,3 +236,55 @@ func TestSessionDeletedClearsPendingPayloads(t *testing.T) {
 		t.Fatalf("perms=%d want 0 after delete", len(perms))
 	}
 }
+
+func TestMergePendingUnion(t *testing.T) {
+	// Two servers, each with its own project's pending items: the store's union
+	// must expose both. Server A serves /permission with p1 and /question with q1;
+	// server B serves /permission with p2 and /question with q2.
+	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/permission":
+			_, _ = w.Write([]byte(`[{"sessionID":"ses_a","type":"permission.asked"}]`))
+		case "/question":
+			_, _ = w.Write([]byte(`[{"sessionID":"ses_a","type":"question.asked"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srvA.Close()
+	srvB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/permission":
+			_, _ = w.Write([]byte(`[{"sessionID":"ses_b","type":"permission.asked"}]`))
+		case "/question":
+			_, _ = w.Write([]byte(`[{"sessionID":"ses_b","type":"question.asked"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srvB.Close()
+
+	st := New()
+	st.ResetPending()
+	if err := st.MergePending(context.Background(), clientFor(t, srvA)); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MergePending(context.Background(), clientFor(t, srvB)); err != nil {
+		t.Fatal(err)
+	}
+	permA, qA := st.Pending("ses_a")
+	permB, qB := st.Pending("ses_b")
+	if len(permA) == 0 || len(qA) == 0 || len(permB) == 0 || len(qB) == 0 {
+		t.Fatalf("pending union wrong: a=(%d,%d) b=(%d,%d)", len(permA), len(qA), len(permB), len(qB))
+	}
+	permC, qC := st.Pending("ses_c")
+	if len(permC)+len(qC) != 0 {
+		t.Fatal("ses_c should not be pending")
+	}
+	// Reset clears everything.
+	st.ResetPending()
+	permA2, qA2 := st.Pending("ses_a")
+	if len(permA2)+len(qA2) != 0 {
+		t.Fatal("ResetPending did not clear the union")
+	}
+}

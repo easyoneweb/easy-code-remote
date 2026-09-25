@@ -4,6 +4,7 @@ import com.easycoderemote.util.asStringOrNull
 import com.easycoderemote.util.str
 import com.easycoderemote.util.sumNumbers
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -179,9 +180,52 @@ fun JsonElement?.permissionSummary(): String {
 fun JsonElement?.questionSummary(): String {
     return when (this) {
         is JsonObject -> {
-            val q = str("question").ifBlank { str("message").ifBlank { str("title").ifBlank { "Question" } } }
-            q
+            // Kilo wraps questions in a `questions` array; also accept flat shapes.
+            val nested = this.firstQuestion()?.str("question")
+            listOf(nested, str("question"), str("message"), str("title"))
+                .firstOrNull { !it.isNullOrBlank() } ?: "Question"
         }
         else -> this.asStringOrNull() ?: "Question"
     }
+}
+
+/** One selectable answer option of a kilo question. */
+data class QuestionOption(val label: String, val description: String)
+
+/** Header of the first question in a payload (kilo wraps questions in an array). */
+fun JsonElement?.questionHeader(): String {
+    val first = this?.firstQuestion()
+    return first?.str("header")
+        ?.takeIf { it.isNotBlank() }
+        ?: this.questionSummary()
+}
+
+/** Body text of the first question in a payload. */
+fun JsonElement?.questionText(): String {
+    val first = this?.firstQuestion()
+    return first?.str("question")
+        ?.takeIf { it.isNotBlank() }
+        ?: this.questionSummary()
+}
+
+/** Options of the first question in a payload, in order. */
+fun JsonElement?.questionOptions(): List<QuestionOption> {
+    val first = this?.firstQuestion() ?: return emptyList()
+    val arr = first["options"] as? JsonArray ?: return emptyList()
+    return arr.mapNotNull { el ->
+        val obj = el as? JsonObject ?: return@mapNotNull null
+        val label = obj.str("label")
+        if (label.isBlank()) null else QuestionOption(label, obj.str("description"))
+    }
+}
+
+/** First question object of a kilo question payload (tolerant). */
+private fun JsonElement.firstQuestion(): JsonObject? {
+    val obj = this as? JsonObject
+    val list = obj?.get("questions") as? JsonArray
+    if (!list.isNullOrEmpty()) {
+        val first = list.firstOrNull() as? JsonObject
+        if (first != null) return first
+    }
+    return obj
 }

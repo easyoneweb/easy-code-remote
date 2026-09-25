@@ -159,6 +159,63 @@ func (s *Store) PollPending(ctx context.Context, c *kilo.Client) error {
 	return nil
 }
 
+// ResetPending clears all retained pending permission/question state. Used
+// before merging fresh lists from every kilo serve (each serve only sees its
+// own project's pending items, so the union across serves is the global view).
+func (s *Store) ResetPending() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clear(s.pendingPerm)
+	clear(s.pendingQ)
+	clear(s.pendingPermPayloads)
+	clear(s.pendingQPayloads)
+}
+
+// MergePending unions one kilo serve's pending permission/question lists into
+// the store. Multiple serves cover different projects.
+func (s *Store) MergePending(ctx context.Context, c *kilo.Client) error {
+	perms, err := c.PermissionList(ctx)
+	if err != nil {
+		return err
+	}
+	questions, err := c.QuestionList(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id := range pendingSet(perms) {
+		s.pendingPerm[id] = true
+	}
+	for id := range pendingSet(questions) {
+		s.pendingQ[id] = true
+	}
+	for sid, payloads := range groupPayloads(perms) {
+		s.pendingPermPayloads[sid] = append(s.pendingPermPayloads[sid], payloads...)
+	}
+	for sid, payloads := range groupPayloads(questions) {
+		s.pendingQPayloads[sid] = append(s.pendingQPayloads[sid], payloads...)
+	}
+	return nil
+}
+
+// MergeStatuses unions one kilo serve's /session/status map into the store
+// (statuses are project-scoped per serve; the union is the global view).
+func (s *Store) MergeStatuses(ctx context.Context, c *kilo.Client) error {
+	statuses, err := c.SessionStatus(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sid, st := range statuses {
+		if e, ok := s.sessions[sid]; ok {
+			e.status = st.Type
+		}
+	}
+	return nil
+}
+
 // ApplyEvent updates the store from one normalized kilo event.
 func (s *Store) ApplyEvent(e event.Event) {
 	switch e.Type {

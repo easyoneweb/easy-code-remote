@@ -51,3 +51,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   the phone. The server now seeds the session list from kilo's own `db` CLI against
   the shared `kilo.db` (global across projects), falling back to the scoped HTTP
   endpoint when the kilo binary is unavailable.
+- Phone transcripts and pending approvals stayed stale for sessions outside the
+  supervised kilo serve's project: kilo's `/event`, `/question` and `/permission`
+  endpoints are all project-scoped, and a passive `kilo serve` never emits the
+  sessions that VSCode windows drive. The server now discovers every `kilo serve`
+  on the host (`/proc` scan), fans their `/event` streams into the phone feed, and
+  merges pending questions/permissions and statuses across all of them. The phone
+  also re-fetches the live edge of the open session every 10 s as a safety net.
+- Android approval screen did not render question variants: kilo question payloads
+  wrap the question in a `questions` array with selectable `options`. The screen
+  now shows the header/body and each option as a selectable card with a Submit
+  button (plus Reject), instead of dumping raw JSON and answering "yes".
