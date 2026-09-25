@@ -70,6 +70,7 @@ class SessionDetailViewModel(
                 if (ev is AppEvent.SessionCompacting && ev.sessionID == sessionId) {
                     _compacting.value = true
                     refreshFromServer()
+                    _compacting.value = false
                 }
             }
         }
@@ -77,8 +78,12 @@ class SessionDetailViewModel(
 
     private suspend fun loadInitial() {
         _transcript.update { it.copy(loadingOlder = true) }
-        val page = repo.fetchMessages(sessionId, limit = windowSize, before = null)
-        _transcript.update { it.copy(hasMore = page.size == windowSize, loadingOlder = false) }
+        val page = runCatching { repo.fetchMessages(sessionId, limit = windowSize, before = null) }
+            .getOrNull()
+        _transcript.update {
+            if (page != null) it.copy(hasMore = page.size == windowSize, loadingOlder = false)
+            else it.copy(loadingOlder = false)
+        }
     }
 
     /** Fetches the next older page anchored at the oldest message in the window. */
@@ -88,8 +93,14 @@ class SessionDetailViewModel(
         val oldest = state.items.lastOrNull() ?: return
         viewModelScope.launch {
             _transcript.update { it.copy(loadingOlder = true) }
-            val page = repo.fetchMessages(sessionId, limit = pageSize, before = oldest.message.id)
-            _transcript.update { it.copy(hasMore = page.size == pageSize, loadingOlder = false) }
+            // A failed page (network flap) must not block further pagination — clear
+            // the flag and let the user scroll again (plan §11: no crash, retry).
+            val page = runCatching { repo.fetchMessages(sessionId, limit = pageSize, before = oldest.message.id) }
+                .getOrNull()
+            _transcript.update {
+                if (page != null) it.copy(hasMore = page.size == pageSize, loadingOlder = false)
+                else it.copy(loadingOlder = false)
+            }
         }
     }
 

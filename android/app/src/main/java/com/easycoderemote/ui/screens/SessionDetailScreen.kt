@@ -68,6 +68,7 @@ import com.easycoderemote.ui.viewmodel.SessionDetailViewModel
 import com.easycoderemote.ui.viewmodel.SessionWindow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -137,7 +138,7 @@ fun SessionDetailScreen(
                     config = config,
                     agent = viewModel.agent.value,
                     onAgentChange = viewModel::selectAgent,
-                    model = viewModel.model.value?.jsonPrimitive?.contentOrNull,
+                    model = (viewModel.model.value as? JsonPrimitive)?.content,
                     onModelChange = viewModel::selectModel,
                     variant = viewModel.variant.value,
                     onVariantChange = viewModel::selectVariant,
