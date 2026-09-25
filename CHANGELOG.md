@@ -71,3 +71,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   live text deltas (append) with persisted full-part snapshots whose text is
   empty/stale mid-stream. A full-part replace (or history re-fetch) can no longer
   shrink the accumulated text, so streaming keeps appending from the correct base.
+- Transcript messages rendered empty and tool/command activity was invisible: the
+  server forwarded `message.part.*` events without a `messageID` (kilo nests it as
+  `part.messageID`), so the phone stored every part with an empty `messageId` and
+  no message could attach to its content. Normalization now extracts the part's
+  `messageID`, so streaming text, tool chips and command output attach to their
+  messages again (and already-stored parts re-attach on the next history fetch).

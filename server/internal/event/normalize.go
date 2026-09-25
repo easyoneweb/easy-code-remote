@@ -84,11 +84,16 @@ func Normalize(raw []byte) (*Event, error) {
 			e.SessionID = str(info, "id")
 		}
 	}
-	// Message id: properties.messageID > data.messageID > data.info.id (for message.* events).
+	// Message id: properties.messageID > data.messageID > data.part.messageID
+	// (part events nest it inside the part object) > data.info.id (message events).
 	if m := str(e.Properties, "messageID"); m != "" {
 		e.MessageID = m
 	} else if m = str(e.Data, "messageID"); m != "" {
 		e.MessageID = m
+	} else if strings.HasPrefix(e.Type, "message.part.") {
+		if part, ok := e.Data["part"].(map[string]any); ok {
+			e.MessageID = str(part, "messageID")
+		}
 	} else if strings.HasPrefix(e.Type, "message.") {
 		if info, ok := e.Data["info"].(map[string]any); ok {
 			e.MessageID = str(info, "id")

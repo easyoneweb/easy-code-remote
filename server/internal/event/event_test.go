@@ -166,3 +166,33 @@ func TestRingCursorsMonotonic(t *testing.T) {
 		t.Fatalf("Latest=%d Oldest=%d, want %d %d", r.Latest(), r.Oldest(), b, a)
 	}
 }
+
+// TestNormalizePartEventMessageID verifies messageID is pulled from the nested
+// `part.messageID` for message.part.* events (kilo nests it inside the part
+// object; without this the phone would store orphaned parts and render empty
+// transcripts).
+func TestNormalizePartEventMessageID(t *testing.T) {
+	raw := []byte(`{"id":"evt_9","type":"message.part.updated.1","aggregateID":"ses_abc","data":{
+		"sessionID":"ses_abc",
+		"part":{"id":"prt_1","sessionID":"ses_abc","messageID":"msg_42","type":"text","text":"Hello"}
+	}}`)
+	e, err := Normalize(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.MessageID != "msg_42" {
+		t.Fatalf("MessageID = %q, want msg_42 (from data.part.messageID)", e.MessageID)
+	}
+	if e.PartID != "prt_1" || e.Type != "message.part.updated" {
+		t.Fatalf("partID/type wrong: %+v", e)
+	}
+	// properties.messageID still wins when present.
+	raw2 := []byte(`{"id":"evt_10","type":"message.part.removed.1","aggregateID":"ses_abc","data":{"part":{"id":"prt_2","messageID":"msg_nested"}},"properties":{"messageID":"msg_prop","partID":"prt_2"}}`)
+	e2, err := Normalize(raw2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e2.MessageID != "msg_prop" {
+		t.Fatalf("MessageID = %q, want msg_prop (properties take precedence)", e2.MessageID)
+	}
+}
