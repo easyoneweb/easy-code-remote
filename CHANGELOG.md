@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Android app (`android/`, Kotlin + Jetpack Compose, min SDK 26): server profiles with
+  TOFU cert pinning, live session list with status badges, streaming session transcript
+  with real-time markdown rendering, permission/question approval dialogs, slash
+  commands, agent/model/variant pickers, and local notifications from a foreground
+  SSE service (no gateway account, no Firebase).
+- Transcript markdown rendering in the session detail screen via Markwon (headings,
+  lists, tables, task lists, inline/fenced code, bold/italic/strikethrough, links):
+  parsed off the main thread with streaming debounce, 64 KiB size cap with a
+  "Show full text" toggle, long-press copy, http(s)-only links, and remote images
+  never loaded (security).
+- Lazy transcript windowing: the detail screen opens at the live edge (latest ~200
+  messages, newest-first) and pages older history on scroll-up via the messages
+  `before`/`limit` params, with dedup by message id, autoscroll at the live edge,
+  and in-place streaming part updates.
 - `GET /api/v1/sessions/{id}/pending` returning the raw pending permission/question
   payloads for a session (kilo passthrough arrays), so phones can recover approval
   dialogs after missed SSE events. The store now retains per-session pending payloads

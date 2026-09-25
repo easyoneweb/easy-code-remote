@@ -36,6 +36,7 @@ object EventParser {
                 sid, d?.string("error") ?: d?.string("message"), envelope.cursor,
             )
             "session.idle" -> AppEvent.SessionIdle(sid, envelope.cursor)
+            "session.compacting" -> AppEvent.SessionCompacting(sid, envelope.cursor)
 
             "message.updated" -> AppEvent.MessageUpdated(sid, mid, d, envelope.cursor)
             "message.removed" -> AppEvent.MessageRemoved(sid, mid, envelope.cursor)

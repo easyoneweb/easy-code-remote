@@ -75,7 +75,8 @@ class EventApplier(
             }
             is AppEvent.ServerConnected, is AppEvent.ResyncRequired,
             is AppEvent.EngineConnected, is AppEvent.EngineDisconnected,
-            is AppEvent.SessionError, is AppEvent.SessionIdle -> Unit
+            is AppEvent.SessionError, is AppEvent.SessionIdle,
+            is AppEvent.SessionCompacting -> Unit
         }
     }
 
@@ -214,14 +215,36 @@ class EventApplier(
         partDao.delete(profileId, sessionId, messageId.orEmpty(), partId)
     }
 
-    /** History fetch: store messages and their embedded parts in server order. */
-    suspend fun storeHistory(sessionId: String, messages: List<com.easycoderemote.data.model.SessionMessageDto>) {
-        var nextSeq = messageDao.maxSeq(profileId, sessionId) ?: 0L
-        for (m in messages) {
-            // Keep the existing seq for messages already stored (re-fetch must not
-            // renumber them, which could collide with concurrently arriving SSE).
+    /**
+     * History fetch: store messages and their embedded parts in server order.
+     *
+     * The server returns pages newest-first. Seq assignment keeps the ascending
+     * Room order == chronological order (plan §5.8):
+     * - Newest page (`olderPage = false`, i.e. `?before=` unset): new messages get
+     *   seq above the current max, newest gets the highest — so a refresh after
+     *   stale cache still sorts correctly.
+     * - Older page (`olderPage = true`, pagination): new messages get seq below
+     *   the current min — they land before everything already stored.
+     * - Existing messages keep their seq (re-fetch must not renumber them, which
+     *   could collide with concurrently arriving SSE).
+     */
+    suspend fun storeHistory(
+        sessionId: String,
+        messages: List<com.easycoderemote.data.model.SessionMessageDto>,
+        olderPage: Boolean,
+    ) {
+        val maxSeq = messageDao.maxSeq(profileId, sessionId)
+        val minSeq = messageDao.minSeq(profileId, sessionId)
+        for ((index, m) in messages.withIndex()) {
+            // Keep the existing seq for messages already stored.
             val existing = messageDao.observeMessage(profileId, sessionId, m.info.id).first()
-            val effectiveSeq = existing?.seq ?: ++nextSeq
+            val effectiveSeq = existing?.seq ?: if (olderPage) {
+                // Pagination: prepend below the current oldest.
+                (minSeq ?: 0L) - (index + 1)
+            } else {
+                // Newest page: append above the current newest (or seed 1..N).
+                if (maxSeq == null) (messages.size - index).toLong() else maxSeq + (messages.size - index)
+            }
             messageDao.upsert(
                 MessageEntity(
                     id = m.info.id,
@@ -251,7 +274,8 @@ class EventApplier(
                 )
             }
         }
-        // Retention: keep the last 200 messages per session.
+        // Retention: per-session storage bound. Generous (1000) so paginated
+        // history survives (plan §5.8: Room retains full history for back-paging).
         messageDao.trimSession(profileId, sessionId)
     }
 

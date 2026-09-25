@@ -49,6 +49,9 @@ interface MessageDao {
     @Query("SELECT MAX(seq) FROM messages WHERE profileId = :profileId AND sessionId = :sessionId")
     suspend fun maxSeq(profileId: String, sessionId: String): Long?
 
+    @Query("SELECT MIN(seq) FROM messages WHERE profileId = :profileId AND sessionId = :sessionId")
+    suspend fun minSeq(profileId: String, sessionId: String): Long?
+
     @Query("DELETE FROM messages WHERE profileId = :profileId AND sessionId = :sessionId AND id = :messageId")
     suspend fun delete(profileId: String, sessionId: String, messageId: String)
 
@@ -57,7 +60,7 @@ interface MessageDao {
 
     @Query(
         """DELETE FROM messages WHERE profileId = :profileId AND sessionId = :sessionId AND id NOT IN
-           (SELECT id FROM messages WHERE profileId = :profileId AND sessionId = :sessionId ORDER BY seq DESC LIMIT 200)""",
+           (SELECT id FROM messages WHERE profileId = :profileId AND sessionId = :sessionId ORDER BY seq DESC LIMIT 1000)""",
     )
     suspend fun trimSession(profileId: String, sessionId: String)
 

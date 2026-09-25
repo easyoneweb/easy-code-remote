@@ -85,6 +85,11 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
 
+    implementation(libs.markwon)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.ext.tables)
+    implementation(libs.markwon.ext.tasklist)
+
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.truth)

@@ -1,5 +1,7 @@
 package com.easycoderemote.ui.screens
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.easycoderemote.data.remote.LiveStream
@@ -44,6 +47,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val testResult by viewModel.testResult.collectAsStateWithLifecycle()
 
     val liveOn = liveState != LiveStream.StreamState.Stopped
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -86,7 +90,13 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 ) { Text("Test connection") }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
-                    onClick = { /* battery-optimization exemption hint placeholder */ },
+                    onClick = {
+                        // Open the system battery-optimization exemptions list (plan §11:
+                        // OEM battery killers must not kill the SSE foreground service).
+                        runCatching {
+                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 ) { Text("Battery optimization hint") }
                 Spacer(Modifier.height(8.dp))

@@ -182,7 +182,7 @@ class Repository(private val appContext: Context) {
     suspend fun fetchMessages(sessionId: String, limit: Int = 50, before: String? = null): List<SessionMessageDto> {
         val (api, pid) = activeApi() ?: return emptyList()
         val msgs = api.messages(sessionId, limit, before)
-        applier(pid).storeHistory(sessionId, msgs)
+        applier(pid).storeHistory(sessionId, msgs, olderPage = before != null)
         return msgs
     }
 

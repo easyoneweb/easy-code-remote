@@ -33,6 +33,9 @@ sealed interface AppEvent {
     data class SessionError(val sessionID: String, val message: String?, override val cursor: Long) : AppEvent
     data class SessionIdle(val sessionID: String, override val cursor: Long) : AppEvent
 
+    /** Session transcript was rewritten (compacted); UI shows a banner + refetches. */
+    data class SessionCompacting(val sessionID: String, override val cursor: Long) : AppEvent
+
     data class MessageUpdated(
         val sessionID: String,
         val messageID: String,
