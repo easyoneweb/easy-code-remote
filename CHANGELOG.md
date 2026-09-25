@@ -62,3 +62,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   wrap the question in a `questions` array with selectable `options`. The screen
   now shows the header/body and each option as a selectable card with a Submit
   button (plus Reject), instead of dumping raw JSON and answering "yes".
+- Transcript rendering (from screen-recording review): phantom empty "assistant"
+  bubbles are gone (empty text parts are skipped, and messages with no visible
+  content are not rendered), the live edge stays pinned while the streaming
+  message grows, and the composer no longer sits flush against the gesture
+  navigation bar (IME + navigation-bar insets are both handled).

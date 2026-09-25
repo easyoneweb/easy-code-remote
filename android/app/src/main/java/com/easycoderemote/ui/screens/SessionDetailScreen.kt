@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -190,8 +191,12 @@ private fun TranscriptList(
     val clipboard = LocalClipboardManager.current
 
     // Live-edge autoscroll: stay pinned to the newest message while the user
-    // hasn't scrolled into history (plan §5.8).
-    LaunchedEffect(items.size, items.firstOrNull()?.message?.id) {
+    // hasn't scrolled into history (plan §5.8). Re-anchor when the newest
+    // message's content grows (streaming) so the tail of the active block stays
+    // visible instead of being pushed below the fold.
+    val newest = items.firstOrNull()
+    val newestContentLen = newest?.parts?.sumOf { it.text.length } ?: 0
+    LaunchedEffect(items.size, newest?.message?.id, newestContentLen) {
         if (items.isNotEmpty() && listState.firstVisibleItemIndex <= 2) {
             listState.scrollToItem(0)
         }
@@ -240,6 +245,11 @@ private fun TranscriptList(
 private fun MessageBubble(tm: TranscriptMessage, isStreaming: Boolean, onCopy: () -> Unit) {
     val message = tm.message
     val isUser = message.role == "user"
+    // Skip messages with no visible content: kilo transcripts contain empty text
+    // parts (parts created before text arrives), which would otherwise render as
+    // phantom empty "assistant" cards.
+    val visibleParts = tm.parts.filter { it.type == "tool" || it.tool != null || it.text.isNotBlank() }
+    if (visibleParts.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(bottom = 2.dp),
@@ -272,9 +282,10 @@ private fun PartView(part: PartEntity, isUser: Boolean, isStreaming: Boolean) {
         ToolChip(part)
     } else if (isUser) {
         // User input stays plain text (plan §5.7): no markdown, no layout spoofing.
-        Text(part.text, style = MaterialTheme.typography.bodyMedium)
+        if (part.text.isNotBlank()) Text(part.text, style = MaterialTheme.typography.bodyMedium)
     } else {
-        MarkdownText(part.text, isStreaming = isStreaming)
+        // Skip empty text parts (phantom cards) — kilo creates parts before text arrives.
+        if (part.text.isNotBlank()) MarkdownText(part.text, isStreaming = isStreaming)
     }
 }
 
@@ -333,7 +344,7 @@ private fun Composer(
     onVariantChange: (String?) -> Unit,
 ) {
     Surface(tonalElevation = 4.dp) {
-        Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             // Slash-command autocomplete (plan §9 Phase 3).
             val commands = config?.commands?.mapNotNull { jobName(it) } ?: emptyList()
             val suggestions = remember(text, commands) {
