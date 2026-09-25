@@ -29,6 +29,13 @@ class SessionDetailViewModel(
     private val windowSize = 200
     private val pageSize = 200
 
+    private companion object {
+        /** Minimum gap between automatic older-page retries after a failure. */
+        const val LOAD_OLDER_COOLDOWN_MS = 5_000L
+    }
+
+    private var lastLoadOlderAttemptMs = 0L
+
     val session: StateFlow<SessionDto?> = repo.observeSession(sessionId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -91,6 +98,11 @@ class SessionDetailViewModel(
         val state = _transcript.value
         if (state.loadingOlder || !state.hasMore) return
         val oldest = state.items.lastOrNull() ?: return
+        // Cooldown so a dead network cannot busy-loop the fetch while the user
+        // stays parked at the oldest edge (plan §11: retry, no crash, no spin).
+        val now = System.currentTimeMillis()
+        if (now - lastLoadOlderAttemptMs < LOAD_OLDER_COOLDOWN_MS) return
+        lastLoadOlderAttemptMs = now
         viewModelScope.launch {
             _transcript.update { it.copy(loadingOlder = true) }
             // A failed page (network flap) must not block further pagination — clear
@@ -106,7 +118,7 @@ class SessionDetailViewModel(
 
     /** Re-pull the live edge after a compaction so the window reflects the rewrite. */
     private suspend fun refreshFromServer() {
-        repo.fetchMessages(sessionId, limit = windowSize, before = null)
+        runCatching { repo.fetchMessages(sessionId, limit = windowSize, before = null) }
     }
 
     fun send() {

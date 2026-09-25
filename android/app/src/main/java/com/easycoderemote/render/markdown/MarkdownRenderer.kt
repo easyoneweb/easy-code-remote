@@ -32,7 +32,18 @@ import kotlinx.coroutines.withContext
  * same text is never re-parsed (plan §5.7: "completed messages keep their final
  * Spannable (never re-parsed)").
  */
-class MarkdownRenderer(context: Context) {
+class MarkdownRenderer private constructor(context: Context) {
+
+    companion object {
+        @Volatile
+        private var instance: MarkdownRenderer? = null
+
+        /** App-wide singleton (plan §5.7: "one Markwon instance reused app-wide"). */
+        fun get(context: Context): MarkdownRenderer =
+            instance ?: synchronized(this) {
+                instance ?: MarkdownRenderer(context.applicationContext).also { instance = it }
+            }
+    }
 
     private val markwon: Markwon = Markwon.builder(context)
         .usePlugin(StrikethroughPlugin.create())

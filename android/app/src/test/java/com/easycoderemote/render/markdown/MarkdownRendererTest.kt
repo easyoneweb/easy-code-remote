@@ -23,7 +23,7 @@ class MarkdownRendererTest {
 
     @Before
     fun setUp() {
-        renderer = MarkdownRenderer(ApplicationProvider.getApplicationContext())
+        renderer = MarkdownRenderer.get(ApplicationProvider.getApplicationContext())
     }
 
     private fun spans(text: String, clazz: Class<*>): Array<out Any> =

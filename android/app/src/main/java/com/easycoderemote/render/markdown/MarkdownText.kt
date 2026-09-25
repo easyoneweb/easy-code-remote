@@ -48,7 +48,7 @@ fun MarkdownText(
     linkColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val context = LocalContext.current
-    val renderer = remember { MarkdownRenderer(context) }
+    val renderer = remember { MarkdownRenderer.get(context) }
     var expanded by remember { mutableStateOf(false) }
 
     val capped = rawText.length > MAX_MARKDOWN_CHARS
