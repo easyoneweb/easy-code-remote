@@ -77,3 +77,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   no message could attach to its content. Normalization now extracts the part's
   `messageID`, so streaming text, tool chips and command output attach to their
   messages again (and already-stored parts re-attach on the next history fetch).
+- Transcript history appeared out of order: the messages endpoint returns pages
+  oldest-first, but the phone assigned local sequence numbers assuming newest-first,
+  so old messages got inverted order and the conversation looked scrambled. Message
+  ordering now uses the server creation time (`timeCreated`, added via a Room
+  migration v1→v2) with `seq` only as a tiebreak, and history sequence numbers are
+  assigned chronologically.

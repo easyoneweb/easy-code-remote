@@ -15,10 +15,23 @@ class TranscriptWindowTest {
     private fun msg(id: String, seq: Long, body: String = "body of $id"): TranscriptMessage {
         val m = MessageEntity(
             id = id, profileId = "p", sessionId = "s", role = "assistant", seq = seq, rawJson = "{}",
+            timeCreated = seq, // tests mirror real data: seq asc == timeCreated asc
         )
         val part = PartEntity(
             id = "${id}_p", profileId = "p", sessionId = "s", messageId = id,
             type = "text", text = body, tool = null, state = null, seq = 1, rawJson = "",
+        )
+        return TranscriptMessage(m, listOf(part))
+    }
+
+    private fun msgAt(id: String, timeCreated: Long, seq: Long = timeCreated): TranscriptMessage {
+        val m = MessageEntity(
+            id = id, profileId = "p", sessionId = "s", role = "assistant", seq = seq, rawJson = "{}",
+            timeCreated = timeCreated,
+        )
+        val part = PartEntity(
+            id = "${id}_p", profileId = "p", sessionId = "s", messageId = id,
+            type = "text", text = "body of $id", tool = null, state = null, seq = 1, rawJson = "",
         )
         return TranscriptMessage(m, listOf(part))
     }
@@ -120,5 +133,39 @@ class TranscriptWindowTest {
         // Same history re-emitted (refetch) — no churn, same order.
         val out = w.onRoom((1L..5L).map { msg("m$it", it) })
         assertThat(ids(out)).containsExactly("m5", "m4", "m3", "m2", "m1").inOrder()
+    }
+
+    @Test
+    fun orderingFollowsCreationTimeNotSeq() {
+        // History stored before the creation-time column existed can have an
+        // INVERTED seq (newest got the lowest seq). Ordering must follow the
+        // server creation time, with seq only as a tiebreak.
+        val w = TranscriptWindow(maxSize = 10)
+        val out = w.onRoom(
+            listOf(
+                msgAt("m1", timeCreated = 100, seq = 5), // oldest, but highest seq
+                msgAt("m2", timeCreated = 200, seq = 4),
+                msgAt("m3", timeCreated = 300, seq = 3),
+                msgAt("m4", timeCreated = 400, seq = 2),
+                msgAt("m5", timeCreated = 500, seq = 1), // newest, but lowest seq
+            ),
+        )
+        assertThat(ids(out)).containsExactly("m5", "m4", "m3", "m2", "m1").inOrder()
+    }
+
+    @Test
+    fun liveEdgeAdmissionUsesCreationTime() {
+        // A live message whose seq is LOWER than the window's (inverted-seq era)
+        // must still be admitted at the live edge based on its creation time.
+        val w = TranscriptWindow(maxSize = 10)
+        w.onRoom(listOf(msgAt("m3", timeCreated = 300, seq = 1), msgAt("m4", timeCreated = 400, seq = 0)))
+        val out = w.onRoom(
+            listOf(
+                msgAt("m5", timeCreated = 500, seq = -1), // newest by time, lowest by seq
+                msgAt("m3", timeCreated = 300, seq = 1),
+                msgAt("m4", timeCreated = 400, seq = 0),
+            ),
+        )
+        assertThat(ids(out)).containsExactly("m5", "m4", "m3").inOrder()
     }
 }

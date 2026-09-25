@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /** GET /health */
 @Serializable
@@ -103,6 +104,10 @@ data class MessageInfoDto(
     val model: JsonElement? = null,
 ) {
     val roleLabel: String get() = role ?: "assistant"
+
+    /** Server creation time (ms epoch); authoritative for transcript ordering. */
+    val createdMs: Long
+        get() = (time as? JsonObject)?.get("created")?.jsonPrimitive?.longOrNull ?: 0L
 }
 
 /** A part (text or tool) inside a message. Tool payloads stay raw JsonElement. */

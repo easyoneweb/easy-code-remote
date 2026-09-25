@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * Applies app events to Room for one profile. Append/replace semantics for text
@@ -159,6 +161,7 @@ class EventApplier(
         val existing = messageDao.observeMessage(profileId, sessionId, messageId).first()
         val seq = existing?.seq ?: ((messageDao.maxSeq(profileId, sessionId) ?: 0L) + 1)
         val role = data?.jsonObject("info")?.str("role") ?: data?.str("role") ?: "assistant"
+        val created = data?.jsonObject("info")?.jsonObject("time")?.get("created")?.jsonPrimitive?.longOrNull ?: 0L
         messageDao.upsert(
             MessageEntity(
                 id = messageId,
@@ -167,6 +170,7 @@ class EventApplier(
                 role = role,
                 seq = seq,
                 rawJson = data?.toString() ?: "",
+                timeCreated = created,
             ),
         )
     }
@@ -223,13 +227,13 @@ class EventApplier(
     /**
      * History fetch: store messages and their embedded parts in server order.
      *
-     * The server returns pages newest-first. Seq assignment keeps the ascending
-     * Room order == chronological order (plan §5.8):
+     * The server returns pages oldest-first (chronological). Seq assignment keeps
+     * ascending Room order == chronological order (plan §5.8):
      * - Newest page (`olderPage = false`, i.e. `?before=` unset): new messages get
-     *   seq above the current max, newest gets the highest — so a refresh after
-     *   stale cache still sorts correctly.
+     *   seq above the current max, in page order — so a refresh after a stale
+     *   cache still sorts correctly.
      * - Older page (`olderPage = true`, pagination): new messages get seq below
-     *   the current min — they land before everything already stored.
+     *   the current min, in page order — they land before everything stored.
      * - Existing messages keep their seq (re-fetch must not renumber them, which
      *   could collide with concurrently arriving SSE).
      */
@@ -244,11 +248,11 @@ class EventApplier(
             // Keep the existing seq for messages already stored.
             val existing = messageDao.observeMessage(profileId, sessionId, m.info.id).first()
             val effectiveSeq = existing?.seq ?: if (olderPage) {
-                // Pagination: prepend below the current oldest.
-                (minSeq ?: 0L) - (index + 1)
+                // Pagination: prepend below the current oldest, chronological.
+                (minSeq ?: 0L) - (messages.size - index).toLong()
             } else {
-                // Newest page: append above the current newest (or seed 1..N).
-                if (maxSeq == null) (messages.size - index).toLong() else maxSeq + (messages.size - index)
+                // Newest page: append above the current newest (or seed 1..N), chronological.
+                if (maxSeq == null) (index + 1).toLong() else maxSeq + (index + 1).toLong()
             }
             messageDao.upsert(
                 MessageEntity(
@@ -258,6 +262,7 @@ class EventApplier(
                     role = m.info.roleLabel,
                     seq = effectiveSeq,
                     rawJson = m.info.toString(),
+                    timeCreated = m.info.createdMs,
                 ),
             )
             var pseq = 0L

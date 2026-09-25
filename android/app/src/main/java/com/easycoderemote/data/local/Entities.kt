@@ -26,6 +26,8 @@ data class MessageEntity(
     val role: String,
     val seq: Long,
     val rawJson: String,
+    /** Server creation time (ms epoch); the authoritative transcript order key. */
+    val timeCreated: Long = 0,
 )
 
 @Entity(tableName = "parts")

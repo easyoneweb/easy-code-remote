@@ -39,27 +39,33 @@ class TranscriptWindow(private val maxSize: Int = 2000) {
             return items
         }
         val inWindow = itemsById
-        val newestSeq = items.firstOrNull()?.message?.seq
-        val oldestSeq = items.lastOrNull()?.message?.seq
+        // Ordering is keyed on the server creation time (message.seq is only a
+        // local tiebreak and can be unreliable for history fetched before the
+        // creation-time column existed).
+        val newestTs = items.firstOrNull()?.message?.timeCreated
+        val oldestTs = items.lastOrNull()?.message?.timeCreated
 
-        var grewAtLiveEdge = newestSeq == null // first fill == live growth
+        var grewAtLiveEdge = newestTs == null // first fill == live growth
         val merged = LinkedHashMap<String, TranscriptMessage>(room.size * 2)
         for (tm in room) {
             when {
                 inWindow[tm.message.id] != null -> merged[tm.message.id] = tm
-                newestSeq == null -> {
+                newestTs == null -> {
                     merged[tm.message.id] = tm
                     grewAtLiveEdge = true
                 }
-                tm.message.seq > newestSeq -> {
+                tm.message.timeCreated > newestTs -> {
                     merged[tm.message.id] = tm
                     grewAtLiveEdge = true
                 }
-                oldestSeq != null && tm.message.seq < oldestSeq -> merged[tm.message.id] = tm // pagination
+                oldestTs != null && tm.message.timeCreated < oldestTs -> merged[tm.message.id] = tm // pagination
             }
         }
 
-        val sorted = merged.values.sortedByDescending { it.message.seq }
+        val sorted = merged.values.sortedWith(
+            compareByDescending<TranscriptMessage> { it.message.timeCreated }
+                .thenByDescending { it.message.seq },
+        )
         val windowed = if (grewAtLiveEdge && sorted.size > maxSize) sorted.take(maxSize) else sorted
         items = windowed
         itemsById = windowed.associateByTo(LinkedHashMap()) { it.message.id }

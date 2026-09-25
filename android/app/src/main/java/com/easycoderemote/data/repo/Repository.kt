@@ -160,7 +160,8 @@ class Repository(private val appContext: Context) {
                     db.partDao().observeParts(pid, sessionId, m.id).map { parts -> m to parts }
                 }
                 combine(partFlows) { arr ->
-                    arr.toList().map { (m, p) -> TranscriptMessage(m, p) }.sortedBy { it.message.seq }
+                    arr.toList().map { (m, p) -> TranscriptMessage(m, p) }
+                        .sortedWith(compareBy({ it.message.timeCreated }, { it.message.seq }))
                 }
             }
         }
