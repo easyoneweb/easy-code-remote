@@ -38,3 +38,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 - CLI: `serve` (default), `status`, `doctor`, `token rotate`, `cert regen`.
 - First-run setup: generates a 256-bit bearer token and a self-signed TLS certificate.
 - Systemd unit and install script (`scripts/`), end-to-end test script (`scripts/e2e.sh`).
+
+### Fixed
+
+- Android app crash right after saving a server profile when the pasted bearer token
+  contained a trailing newline/whitespace (OkHttp rejects control characters in the
+  `Authorization` header). Tokens are now trimmed on save, on load, and when the
+  header is built, and a malformed header can no longer crash the SSE reconnect loop.
