@@ -62,6 +62,46 @@ class EventApplierTest {
     }
 
     @Test
+    fun staleEmptyFullPartNeverRegressesStreamingText() = runTest {
+        // Kilo interleaves live deltas (append) with persisted full-part snapshots
+        // whose text is EMPTY or stale mid-stream (plan §5.6). A replace with
+        // shorter/empty text must not wipe the accumulated text.
+        applier.apply(AppEvent.SessionCreated("ses_1", SessionDto(id = "ses_1"), null, 1))
+        applier.apply(AppEvent.MessageUpdated("ses_1", "msg_1", null, 2))
+        applier.apply(AppEvent.PartUpdated("ses_1", "msg_1", "prt_1", PartDto(id = "prt_1"), deltaText = "Hello", 3))
+        applier.apply(AppEvent.PartUpdated("ses_1", "msg_1", "prt_1", PartDto(id = "prt_1"), deltaText = " world", 4))
+
+        // Stale snapshot with empty text (the persisted part-created event).
+        applier.apply(
+            AppEvent.PartUpdated("ses_1", "msg_1", "prt_1", PartDto(id = "prt_1", type = "text", text = ""), null, 5),
+        )
+        var parts = db.partDao().observeParts("prof_1", "ses_1", "msg_1").first()
+        assertThat(parts.first().text).isEqualTo("Hello world")
+
+        // Stale snapshot with partial/shorter text.
+        applier.apply(
+            AppEvent.PartUpdated("ses_1", "msg_1", "prt_1", PartDto(id = "prt_1", type = "text", text = "Hello"), null, 6),
+        )
+        parts = db.partDao().observeParts("prof_1", "ses_1", "msg_1").first()
+        assertThat(parts.first().text).isEqualTo("Hello world")
+
+        // Deltas keep appending after the stale replaces.
+        applier.apply(AppEvent.PartUpdated("ses_1", "msg_1", "prt_1", PartDto(id = "prt_1"), deltaText = "!", 7))
+        parts = db.partDao().observeParts("prof_1", "ses_1", "msg_1").first()
+        assertThat(parts.first().text).isEqualTo("Hello world!")
+
+        // A genuinely longer snapshot still replaces (e.g. the final committed text).
+        applier.apply(
+            AppEvent.PartUpdated(
+                "ses_1", "msg_1", "prt_1",
+                PartDto(id = "prt_1", type = "text", text = "Hello world! Final"), null, 8,
+            ),
+        )
+        parts = db.partDao().observeParts("prof_1", "ses_1", "msg_1").first()
+        assertThat(parts.first().text).isEqualTo("Hello world! Final")
+    }
+
+    @Test
     fun pendingPayloadRetainedThenCleared() = runTest {
         applier.apply(
             AppEvent.PermissionAsked(

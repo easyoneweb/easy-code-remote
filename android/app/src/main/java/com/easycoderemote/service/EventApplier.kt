@@ -204,7 +204,12 @@ class EventApplier(
 
     private fun replaceFromPart(base: PartEntity, part: PartDto): PartEntity = base.copy(
         type = part.type.ifBlank { base.type },
-        text = part.textValue,
+        // Kilo interleaves live text deltas (`message.part.delta`, append) with
+        // persisted full-part snapshots (`message.part.updated`, replace) whose
+        // text is often EMPTY or stale mid-stream. Never let a replace shrink the
+        // accumulated text, or streaming would wipe the earlier content and keep
+        // appending from the truncated base.
+        text = if (part.textValue.length >= base.text.length) part.textValue else base.text,
         tool = part.tool ?: part.name ?: base.tool,
         state = part.stateLabel.ifBlank { base.state },
         rawJson = "",
@@ -258,6 +263,15 @@ class EventApplier(
             var pseq = 0L
             for (p in m.parts) {
                 pseq += 1
+                // Keep the more advanced text: a history snapshot can lag the live
+                // stream (or carry empty text for in-flight parts), so never let a
+                // shorter snapshot overwrite the accumulated text.
+                val existingPart = partDao.observePart(profileId, sessionId, m.info.id, p.id).first()
+                val text = if (p.textValue.length >= (existingPart?.text?.length ?: 0)) {
+                    p.textValue
+                } else {
+                    existingPart?.text ?: p.textValue
+                }
                 partDao.upsert(
                     PartEntity(
                         id = p.id,
@@ -265,7 +279,7 @@ class EventApplier(
                         sessionId = sessionId,
                         messageId = m.info.id,
                         type = p.type.ifBlank { "text" },
-                        text = p.textValue,
+                        text = text,
                         tool = p.tool ?: p.name,
                         state = p.stateLabel,
                         seq = pseq,

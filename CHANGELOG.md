@@ -67,3 +67,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   content are not rendered), the live edge stays pinned while the streaming
   message grows, and the composer no longer sits flush against the gesture
   navigation bar (IME + navigation-bar insets are both handled).
+- Streaming assistant text no longer loses its earlier content: kilo interleaves
+  live text deltas (append) with persisted full-part snapshots whose text is
+  empty/stale mid-stream. A full-part replace (or history re-fetch) can no longer
+  shrink the accumulated text, so streaming keeps appending from the correct base.
