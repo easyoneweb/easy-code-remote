@@ -40,6 +40,9 @@ class CertProbe {
                 if (trimmed.startsWith("https://")) {
                     val ctx = sslContextFor(tm)
                     sslSocketFactory(ctx.socketFactory, tm)
+                    // TOFU first connect: we verify the presented fingerprint, not the
+                    // hostname (a self-signed cert cannot list every LAN IP in its SANs).
+                    hostnameVerifier { _, _ -> true }
                 }
             }
             .build()
