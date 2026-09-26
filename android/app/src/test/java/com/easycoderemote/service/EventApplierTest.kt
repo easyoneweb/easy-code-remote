@@ -11,6 +11,8 @@ import com.easycoderemote.data.model.MessageInfoDto
 import com.easycoderemote.data.model.PartDto
 import com.easycoderemote.data.model.SessionDto
 import com.easycoderemote.data.model.SessionMessageDto
+import com.easycoderemote.util.APP_JSON
+import com.easycoderemote.util.decodeTolerantArray
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -123,6 +125,44 @@ class EventApplierTest {
         applier.apply(AppEvent.PermissionReplied("ses_1", 2))
         pending = db.pendingItemDao().observePending("prof_1", "ses_1").first()
         assertThat(pending).isEmpty()
+    }
+
+    @Test
+    fun storeHistoryKeepsMessageWithObjectStateToolPart() = runTest {
+        // Kilo `question` tool parts carry `state` as `{status, input}`. Before the
+        // tolerant-decode fix this threw in PartDto and decodeTolerantArray silently
+        // dropped the whole message (user's reply vanished from the transcript).
+        val raw = """
+            [{
+              "info": {"id": "msg_1", "sessionID": "ses_1", "role": "assistant", "agent": "plan",
+                       "modelID": "deepseek-v4-flash-0731", "providerID": "router_ai",
+                       "time": {"created": 1000}, "parentID": "msg_0"},
+              "parts": [
+                {"id": "p1", "type": "step-start", "sessionID": "ses_1", "messageID": "msg_1",
+                 "snapshot": {}, "time": {"created": 1001}},
+                {"id": "p2", "type": "text", "sessionID": "ses_1", "messageID": "msg_1",
+                 "text": "Plain-text streaming it is. Next decision.",
+                 "time": {"created": 1002}},
+                {"id": "p3", "type": "tool", "sessionID": "ses_1", "messageID": "msg_1",
+                 "tool": "question", "callID": "call_1",
+                 "state": {"status": "completed", "input": {"questions": []}},
+                 "time": {"created": 1003}}
+              ]
+            }]
+        """.trimIndent()
+        val msgs = decodeTolerantArray(raw, SessionMessageDto.serializer())
+        assertThat(msgs).hasSize(1)
+
+        applier.storeHistory("ses_1", msgs, olderPage = false)
+        val stored = db.messageDao().observeMessages("prof_1", "ses_1").first()
+        assertThat(stored).hasSize(1)
+        assertThat(stored.first().id).isEqualTo("msg_1")
+        assertThat(stored.first().agent).isEqualTo("plan")
+        assertThat(stored.first().providerID).isEqualTo("router_ai")
+        assertThat(stored.first().modelID).isEqualTo("deepseek-v4-flash-0731")
+        val parts = db.partDao().observeParts("prof_1", "ses_1", "msg_1").first()
+        assertThat(parts.map { it.type }).containsExactly("step-start", "text", "tool")
+        assertThat(parts.first { it.type == "tool" }.state).isEqualTo("completed")
     }
 
     @Test

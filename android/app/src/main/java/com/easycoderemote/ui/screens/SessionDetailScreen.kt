@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -441,11 +442,12 @@ private fun Composer(
                     ?.let { mid -> config?.models?.firstOrNull { it.id == mid } }
                 val chosenModel = overrideEntry ?: sessionModelEntry
                 var showModelPicker by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { showModelPicker = true }, modifier = Modifier.padding(vertical = 2.dp)) {
+                OutlinedButton(onClick = { showModelPicker = true }, modifier = Modifier.padding(vertical = 2.dp).widthIn(max = 200.dp)) {
                     Text(
-                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName ?: overrideModelId, session).take(14)}",
+                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName ?: overrideModelId, session)}",
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (showModelPicker) {
@@ -504,11 +506,12 @@ private fun Composer(
 private fun PickerChip(label: String, current: String?, options: List<String>, onSelect: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.padding(vertical = 2.dp)) {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.padding(vertical = 2.dp).widthIn(max = 200.dp)) {
             Text(
-                "$label: ${current?.take(14) ?: "—"}",
+                "$label: ${current ?: "—"}",
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

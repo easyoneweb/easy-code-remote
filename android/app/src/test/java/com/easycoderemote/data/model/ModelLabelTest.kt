@@ -140,4 +140,48 @@ class ModelLabelTest {
         val plain = sessionWithModel(JsonPrimitive("m1"))
         assertThat(plain.modelLabel()).isEqualTo("m1")
     }
+
+    // -- PartDto tolerant state (kilo tool parts) ---------------------------
+
+    @Test
+    fun partDtoDecodesObjectStateWithoutLosingTheMessage() {
+        // kilo question/permission tool parts carry `state` as `{status, input}`;
+        // an object state used to fail String? decode and silently drop the part.
+        val raw = """
+            {
+              "id": "prt_q",
+              "type": "tool",
+              "tool": "question",
+              "state": {"status": "completed", "input": {"questions": []}}
+            }
+        """.trimIndent()
+        val part = APP_JSON.decodeFromString<PartDto>(raw)
+        assertThat(part.id).isEqualTo("prt_q")
+        assertThat(part.stateLabel).isEqualTo("completed")
+        assertThat(part.isTool).isTrue()
+    }
+
+    @Test
+    fun partDtoAcceptsFlatStringStateStill() {
+        val flat = """{"id":"prt_1","type":"tool","tool":"bash","state":"running"}"""
+        val part = APP_JSON.decodeFromString<PartDto>(flat)
+        assertThat(part.stateLabel).isEqualTo("running")
+    }
+
+    @Test
+    fun sessionMessageWithObjectStateDecodesThroughTolerantArray() {
+        val raw = """
+            [
+              {"info": {"id": "msg_1", "role": "assistant"},
+               "parts": [
+                 {"id": "prt_q", "type": "tool", "tool": "question",
+                  "state": {"status": "completed", "input": {"questions": []}}}
+               ]}
+            ]
+        """.trimIndent()
+        val msgs = com.easycoderemote.util.decodeTolerantArray(raw, SessionMessageDto.serializer())
+        assertThat(msgs).hasSize(1)
+        assertThat(msgs[0].info.id).isEqualTo("msg_1")
+        assertThat(msgs[0].parts.first().stateLabel).isEqualTo("completed")
+    }
 }

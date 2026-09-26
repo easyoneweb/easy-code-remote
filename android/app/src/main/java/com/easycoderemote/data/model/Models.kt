@@ -185,14 +185,28 @@ data class PartDto(
     val text: String? = null,
     val tool: String? = null,
     val name: String? = null,
-    val state: String? = null,
+    /** Tolerant of both a flat string and a `{status, ...}` object that kilo emits
+     *  on question/permission tool parts. */
+    val state: JsonElement? = null,
     val status: String? = null,
     val title: String? = null,
     val input: JsonElement? = null,
     val output: JsonElement? = null,
 ) {
     val isTool: Boolean get() = type == "tool" || tool != null
-    val stateLabel: String get() = state ?: status ?: ""
+
+    /** UI string for the part state: the found `state`/`status` value. */
+    val stateLabel: String
+        get() {
+            val fromState = when (val s = state) {
+                is JsonPrimitive -> s.content.takeIf { it.isNotBlank() }
+                is JsonObject -> s["status"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    ?: s["state"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                else -> null
+            }
+            return fromState ?: status ?: ""
+        }
+
     val textValue: String get() = text ?: ""
 }
 

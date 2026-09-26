@@ -88,10 +88,13 @@ class SessionDetailViewModel(
         // Safety net: refresh the live edge periodically even if the SSE stream is
         // down, so the transcript never stays stale (e.g. after a phone sleep or a
         // server restart). storeHistory is idempotent for already-seen messages.
+        // Pending items are refreshed on the same cadence so permission/question
+        // banners appear without a live SSE connection.
         viewModelScope.launch {
             while (isActive) {
                 delay(TRANSCRIPT_POLL_MS)
                 runCatching { repo.fetchMessages(sessionId, limit = 50, before = null) }
+                runCatching { repo.fetchPending(sessionId) }
             }
         }
     }
