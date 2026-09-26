@@ -237,6 +237,64 @@ func TestWriteErrorBody(t *testing.T) {
 	}
 }
 
+func TestHandleQuestionContractAnswersArePlainStrings(t *testing.T) {
+	// The wire contract (docs/protocol.md) is `{"questionID":"q_...","answers":["label"]}`.
+	// Assert the server relays exactly that shape to kilo and answers its post request.
+	var gotAnswers any
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotAnswers = body["answers"]
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	s := New(newKiloClientFor(t, srv), store.New(), supervisor.New("/nonexistent/kilo", "127.0.0.1", 1, "x", nil), "test", nil)
+	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
+		"info": map[string]any{"id": "ses_x", "title": "X"},
+	}})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ses_x/question", strings.NewReader(
+		`{"questionID":"q_1","answers":["DB-draft + fast poll"]}`,
+	))
+	req.SetPathValue("id", "ses_x")
+	s.HandleQuestion(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
+	}
+	if gotPath != "/question/q_1/reply" {
+		t.Fatalf("kilo path = %q", gotPath)
+	}
+	strs, ok := gotAnswers.([]any)
+	if !ok || len(strs) != 1 || strs[0] != "DB-draft + fast poll" {
+		t.Fatalf("answers relayed as %#v (want plain-string array)", gotAnswers)
+	}
+}
+
+func TestHandleQuestionRejectsObjectAnswers(t *testing.T) {
+	// Kilo and the server both expect answers as plain strings; an object form
+	// (older/incorrect phone builds) must be rejected with a clear 400 instead
+	// of a confusing passthrough.
+	s := newTestAPI()
+	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
+		"info": map[string]any{"id": "ses_x", "title": "X"},
+	}})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ses_x/question", strings.NewReader(
+		`{"questionID":"q_1","answers":[{"value":"DB-draft + fast poll"}]}`,
+	))
+	req.SetPathValue("id", "ses_x")
+	s.HandleQuestion(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400; body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid JSON body") {
+		t.Fatalf("body: %s", rec.Body.String())
+	}
+}
+
 func TestHandleSessionNotFound(t *testing.T) {
 	s := newTestAPI()
 	rec := httptest.NewRecorder()

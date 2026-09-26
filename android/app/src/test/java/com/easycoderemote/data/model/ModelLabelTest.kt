@@ -5,7 +5,11 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.junit.Test
 
 /** Label formatting + tolerant decode of agent/model fields (plan §1 helpers). */
@@ -183,5 +187,22 @@ class ModelLabelTest {
         assertThat(msgs).hasSize(1)
         assertThat(msgs[0].info.id).isEqualTo("msg_1")
         assertThat(msgs[0].parts.first().stateLabel).isEqualTo("completed")
+    }
+
+    @Test
+    fun questionReplyBodyUsesPlainStringAnswers() {
+        // Regression for the Submit failure ("cannot unmarshal object into
+        // questionReq.answers.0 of type string"): the phone must POST plain
+        // labels, mirroring ApiClient.questionReply's serialization.
+        val json = buildJsonObject {
+            put("questionID", "q_1")
+            putJsonArray("answers") { add(JsonPrimitive("DB-draft + fast poll")) }
+        }
+        val text = json.toString()
+        assertThat(text).isEqualTo("""{"questionID":"q_1","answers":["DB-draft + fast poll"]}""")
+        // And the wire body must parse back as plain strings on the server shape.
+        val answers = APP_JSON.parseToJsonElement(text).jsonObject["answers"]!!.jsonArray
+        assertThat(answers.all { it is JsonPrimitive }).isTrue()
+        assertThat(answers[0].jsonPrimitive.content).isEqualTo("DB-draft + fast poll")
     }
 }

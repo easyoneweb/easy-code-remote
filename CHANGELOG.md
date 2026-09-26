@@ -35,6 +35,10 @@ adheres to [Semantic Versioning](https://semver.org/).
   query with a trailing debounce, so streaming bursts coalesce into one recomposition
   instead of re-rendering the whole visible list per token; the live-edge autoscroll
   additionally only re-anchors while the user is actually pinned to the newest message.
+- Question answers are submitted as plain strings (`answers: ["label", ...]`) as the
+  API contract requires; the previous object form (`[{"value": ...}]`) made kilo
+  reject the reply ("cannot unmarshal object into questionReq.answers.0 of type
+  string"), so answering a question in the approvals sheet never worked.
 - Android app (`android/`, Kotlin + Jetpack Compose, min SDK 26): server profiles with
   TOFU cert pinning, live session list with status badges, streaming session transcript
   with real-time markdown rendering, permission/question approval dialogs, slash
