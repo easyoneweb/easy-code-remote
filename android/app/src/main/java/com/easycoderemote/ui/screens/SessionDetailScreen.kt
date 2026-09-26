@@ -34,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -58,19 +59,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.easycoderemote.data.local.PartEntity
+import com.easycoderemote.data.model.ModelEntryDto
 import com.easycoderemote.data.model.ServerConfigDto
+import com.easycoderemote.data.model.SessionDto
+import com.easycoderemote.data.model.badgeLabel
+import com.easycoderemote.data.model.providerModelLabel
 import com.easycoderemote.data.repo.TranscriptMessage
 import com.easycoderemote.render.markdown.MarkdownText
 import com.easycoderemote.ui.components.LoadingRow
 import com.easycoderemote.ui.components.StatusBadge
+import com.easycoderemote.ui.viewmodel.ComposerOverrides
 import com.easycoderemote.ui.viewmodel.SessionDetailViewModel
 import com.easycoderemote.ui.viewmodel.SessionWindow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -103,9 +109,38 @@ fun SessionDetailScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(session?.title?.take(48) ?: viewModel.sessionId, style = MaterialTheme.typography.titleMedium)
-                        session?.let { StatusBadge(it.status, it.waitingReason) }
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            session?.title?.take(48) ?: viewModel.sessionId,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        session?.let { s ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                StatusBadge(s.status, s.waitingReason)
+                                Text(
+                                    "agent: ${s.agent ?: "—"}",
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "model: ${providerModelLabel(s.sessionModelProvider(), s.sessionModelId()) ?: "—"}",
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
@@ -141,11 +176,12 @@ fun SessionDetailScreen(
                     onSend = viewModel::send,
                     onStop = viewModel::abort,
                     running = session?.status == "running",
+                    session = session,
                     config = config,
                     agent = agent,
                     onAgentChange = viewModel::selectAgent,
-                    model = (modelElem as? JsonPrimitive)?.content,
-                    onModelChange = viewModel::selectModel,
+                    model = modelElem,
+                    onModelSelect = viewModel::selectModel,
                     variant = variant,
                     onVariantChange = viewModel::selectVariant,
                 )
@@ -261,6 +297,19 @@ private fun MessageBubble(tm: TranscriptMessage, isStreaming: Boolean, onCopy: (
                 color = MaterialTheme.colorScheme.outline,
             )
         }
+        // Message-local agent/model caption on assistant bubbles (plan: badge labels).
+        if (!isUser) {
+            badgeLabel(message.agent, message.providerID, message.modelID)?.let { badge ->
+                Text(
+                    badge,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Surface(
             modifier = Modifier
                 .fillMaxWidth(if (isUser) 0.85f else 1f)
@@ -335,11 +384,12 @@ private fun Composer(
     onSend: () -> Unit,
     onStop: () -> Unit,
     running: Boolean,
+    session: SessionDto?,
     config: ServerConfigDto?,
     agent: String?,
     onAgentChange: (String?) -> Unit,
-    model: String?,
-    onModelChange: (String?) -> Unit,
+    model: JsonElement?,
+    onModelSelect: (providerID: String?, id: String) -> Unit,
     variant: String?,
     onVariantChange: (String?) -> Unit,
 ) {
@@ -379,10 +429,44 @@ private fun Composer(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val agentOptions = config?.agents?.mapNotNull { jobName(it) } ?: emptyList()
-                PickerChip("agent", agent, agentOptions, onAgentChange)
-                val modelOptions = config?.models?.map { it.id } ?: emptyList()
-                PickerChip("model", model, modelOptions, onModelChange)
-                PickerChip("variant", variant, listOf("default", "low", "medium", "high"), onVariantChange)
+                PickerChip("agent", ComposerOverrides.resolveAgent(agent, session), agentOptions, onAgentChange)
+
+                // Model: provider-grouped searchable picker sheet. The chip shows the
+                // override's display name, else the session's active `provider · id`,
+                // else "auto".
+                val overrideEntry = (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+                    ?.let { mid -> config?.models?.firstOrNull { it.id == mid } }
+                val sessionModelEntry = session?.sessionModelId()
+                    ?.let { mid -> config?.models?.firstOrNull { it.id == mid } }
+                val chosenModel = overrideEntry ?: sessionModelEntry
+                var showModelPicker by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { showModelPicker = true }, modifier = Modifier.padding(vertical = 2.dp)) {
+                    Text(
+                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName, session)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                    )
+                }
+                if (showModelPicker) {
+                    ModelPickerSheet(
+                        models = config?.models ?: emptyList(),
+                        loading = config == null,
+                        initialProviderID = overrideEntry?.providerID,
+                        initialSearch = (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull,
+                        onSelect = { providerID, id ->
+                            onModelSelect(providerID, id)
+                            showModelPicker = false
+                        },
+                        onDismiss = { showModelPicker = false },
+                    )
+                }
+
+                PickerChip(
+                    "variant",
+                    ComposerOverrides.resolveVariant(variant, session, chosenModel),
+                    ComposerOverrides.variantOptions(chosenModel),
+                    onVariantChange,
+                )
             }
 
             Row(
@@ -430,7 +514,180 @@ private fun PickerChip(label: String, current: String?, options: List<String>, o
             options.distinct().forEach { opt ->
                 DropdownMenuItem(text = { Text(opt) }, onClick = { onSelect(opt); open = false })
             }
+            // "(none)" maps to a null override → the chip falls back to the session
+            // active value; it is never a hard "none" state.
             DropdownMenuItem(text = { Text("(none)") }, onClick = { onSelect(null); open = false })
+        }
+    }
+}
+
+/**
+ * Level 1 (providers) → level 2 (searchable models of one provider) model picker.
+ * Opens on the override's provider+model when one is active, else on providers.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModelPickerSheet(
+    models: List<ModelEntryDto>,
+    loading: Boolean,
+    initialProviderID: String?,
+    initialSearch: String?,
+    onSelect: (providerID: String?, id: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // Pre-group by providerID once per config for O(1) level-2 access; name is
+    // only used for a missing-provider bucket (plan: "unknown").
+    val byProvider = remember(models) {
+        models.groupBy { it.providerID?.takeIf { p -> p.isNotBlank() } ?: "unknown" }
+            .toSortedMap()
+    }
+    var providerID by remember { mutableStateOf(initialProviderID) }
+    var search by remember { mutableStateOf(initialSearch.orEmpty()) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        when {
+            loading -> Box(
+                Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+
+            models.isEmpty() -> Text(
+                "No models available",
+                modifier = Modifier.padding(24.dp).align(Alignment.CenterHorizontally),
+            )
+
+            providerID == null -> ProviderLevel(
+                byProvider = byProvider,
+                onPickProvider = { providerID = it },
+            )
+
+            else -> {
+                val pid = providerID ?: "unknown"
+                val providerModels = byProvider[pid].orEmpty()
+                ModelLevel(
+                    providerID = pid,
+                    models = providerModels,
+                    search = search,
+                    onSearchChange = { search = it },
+                    onSelect = { onSelect(pid, it) },
+                    onBack = { providerID = null },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderLevel(
+    byProvider: Map<String, List<ModelEntryDto>>,
+    onPickProvider: (String) -> Unit,
+) {
+    LazyColumn(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+    ) {
+        item {
+            Text(
+                "Providers",
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        items(byProvider.toList(), key = { it.first }) { (pid, providerModels) ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onPickProvider(pid) }
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(pid, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "· ${providerModels.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelLevel(
+    providerID: String,
+    models: List<ModelEntryDto>,
+    search: String,
+    onSearchChange: (String) -> Unit,
+    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("‹") }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    providerID,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "${models.size} models",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                )
+            }
+        }
+        OutlinedTextField(
+            value = search,
+            onValueChange = onSearchChange,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            singleLine = true,
+            placeholder = { Text("Search models…") },
+        )
+        val filtered = remember(models, search) {
+            val q = search.trim()
+            if (q.isEmpty()) {
+                models
+            } else {
+                models.filter { m ->
+                    m.id.contains(q, ignoreCase = true) || m.displayName.contains(q, ignoreCase = true)
+                }
+            }
+        }
+        if (filtered.isEmpty()) {
+            Text(
+                "No models match",
+                modifier = Modifier.padding(24.dp),
+            )
+        } else {
+            LazyColumn(Modifier.fillMaxWidth()) {
+                items(filtered, key = { it.id }) { m ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(m.id) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Text(m.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (m.id != m.displayName) {
+                            Text(
+                                m.id,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.outline,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

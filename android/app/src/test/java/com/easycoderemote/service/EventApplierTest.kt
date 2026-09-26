@@ -1,16 +1,22 @@
 package com.easycoderemote.service
 
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.easycoderemote.data.local.AppDatabase
+import com.easycoderemote.data.local.MessageEntity
 import com.easycoderemote.data.model.AppEvent
+import com.easycoderemote.data.model.MessageInfoDto
 import com.easycoderemote.data.model.PartDto
 import com.easycoderemote.data.model.SessionDto
+import com.easycoderemote.data.model.SessionMessageDto
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -138,5 +144,135 @@ class EventApplierTest {
         applier.replaceAllSessions(listOf(SessionDto(id = "ses_new", title = "N")))
         assertThat(db.sessionDao().observeSession("prof_1", "ses_old").first()).isNull()
         assertThat(db.sessionDao().observeSession("prof_1", "ses_new").first()?.title).isEqualTo("N")
+    }
+
+    @Test
+    fun messageUpdatedPopulatesBadgeFields() = runTest {
+        val data = buildJsonObject {
+            putJsonObject("info") {
+                put("id", "msg_1")
+                put("sessionID", "ses_1")
+                put("role", "assistant")
+                put("agent", "implementer")
+                put("providerID", "openrouter")
+                put("modelID", "deepseek-v4-flash-0731")
+            }
+        }
+        applier.apply(AppEvent.MessageUpdated("ses_1", "msg_1", data, 2))
+        val m = db.messageDao().observeMessages("prof_1", "ses_1").first().single()
+        assertThat(m.agent).isEqualTo("implementer")
+        assertThat(m.providerID).isEqualTo("openrouter")
+        assertThat(m.modelID).isEqualTo("deepseek-v4-flash-0731")
+    }
+
+    @Test
+    fun messageUpdatedDerivesProviderModelFromNestedModelObject() = runTest {
+        val data = buildJsonObject {
+            putJsonObject("info") {
+                put("id", "msg_1")
+                put("role", "assistant")
+                put("agent", "implementer")
+                putJsonObject("model") {
+                    put("id", "claude-opus-4")
+                    put("providerID", "anthropic")
+                    put("variant", "default")
+                }
+            }
+        }
+        applier.apply(AppEvent.MessageUpdated("ses_1", "msg_1", data, 2))
+        val m = db.messageDao().observeMessages("prof_1", "ses_1").first().single()
+        assertThat(m.agent).isEqualTo("implementer")
+        assertThat(m.providerID).isEqualTo("anthropic")
+        assertThat(m.modelID).isEqualTo("claude-opus-4")
+    }
+
+    @Test
+    fun storeHistoryPopulatesBadgeFields() = runTest {
+        val dto = SessionMessageDto(
+            info = MessageInfoDto(
+                id = "msg_h",
+                role = "assistant",
+                agent = "plan",
+                providerID = "anthropic",
+                modelID = "claude-sonnet-4",
+            ),
+            parts = emptyList(),
+        )
+        applier.storeHistory("ses_1", listOf(dto), olderPage = false)
+        val m = db.messageDao().observeMessages("prof_1", "ses_1").first().single()
+        assertThat(m.agent).isEqualTo("plan")
+        assertThat(m.providerID).isEqualTo("anthropic")
+        assertThat(m.modelID).isEqualTo("claude-sonnet-4")
+    }
+
+    @Test
+    fun migration2To3PreservesExistingRowsAndAddsBadgeColumns() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase("ecr-migration-test.db")
+        // Build a v2 schema + seed data by hand (Room's v2 exported schema).
+        val path = context.getDatabasePath("ecr-migration-test.db").path
+        val v2 = SQLiteDatabase.openOrCreateDatabase(path, null)
+        v2.execSQL(
+            "CREATE TABLE sessions (id TEXT NOT NULL, profileId TEXT NOT NULL, title TEXT NOT NULL, " +
+                "agent TEXT, modelLabel TEXT, directory TEXT, status TEXT NOT NULL, waitingReason TEXT, " +
+                "archived INTEGER NOT NULL, lastUpdated INTEGER NOT NULL, rawJson TEXT NOT NULL, PRIMARY KEY(id))",
+        )
+        v2.execSQL(
+            "CREATE TABLE messages (id TEXT NOT NULL, profileId TEXT NOT NULL, sessionId TEXT NOT NULL, " +
+                "role TEXT NOT NULL, seq INTEGER NOT NULL, rawJson TEXT NOT NULL, timeCreated INTEGER NOT NULL, " +
+                "PRIMARY KEY(id))",
+        )
+        v2.execSQL(
+            "CREATE TABLE parts (id TEXT NOT NULL, profileId TEXT NOT NULL, sessionId TEXT NOT NULL, " +
+                "messageId TEXT NOT NULL, type TEXT NOT NULL, text TEXT NOT NULL, tool TEXT, state TEXT, " +
+                "seq INTEGER NOT NULL, rawJson TEXT NOT NULL, PRIMARY KEY(id))",
+        )
+        v2.execSQL(
+            "CREATE TABLE pending_items (id TEXT NOT NULL, profileId TEXT NOT NULL, sessionId TEXT NOT NULL, " +
+                "kind TEXT NOT NULL, rawJson TEXT NOT NULL, receivedAt INTEGER NOT NULL, PRIMARY KEY(id))",
+        )
+        v2.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+        v2.execSQL("INSERT INTO room_master_table (id,identity_hash) VALUES(42, 'placeholder')")
+        v2.execSQL("INSERT INTO messages (id,profileId,sessionId,role,seq,rawJson,timeCreated) " +
+            "VALUES ('msg_old','prof_1','ses_1','assistant',1,'{}',1000)")
+        v2.version = 2
+        v2.close()
+
+        val migrated = Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            "ecr-migration-test.db",
+        ).addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3).allowMainThreadQueries().build()
+        try {
+            assertThat(migrated.openHelper.writableDatabase.version).isEqualTo(3)
+            val m = migrated.messageDao().observeMessages("prof_1", "ses_1").first().single()
+            assertThat(m.id).isEqualTo("msg_old")
+            assertThat(m.role).isEqualTo("assistant")
+            assertThat(m.agent).isNull()
+            assertThat(m.providerID).isNull()
+            assertThat(m.modelID).isNull()
+            // Writing rows with the new badge columns must work on the migrated DB.
+            migrated.messageDao().upsert(
+                MessageEntity(
+                    id = "msg_new",
+                    profileId = "prof_1",
+                    sessionId = "ses_1",
+                    role = "user",
+                    seq = 2,
+                    rawJson = "{}",
+                    timeCreated = 2000,
+                    agent = "code",
+                    providerID = "openrouter",
+                    modelID = "m1",
+                ),
+            )
+            val inserted = migrated.messageDao().observeMessages("prof_1", "ses_1").first().first { it.id == "msg_new" }
+            assertThat(inserted.agent).isEqualTo("code")
+            assertThat(inserted.providerID).isEqualTo("openrouter")
+            assertThat(inserted.modelID).isEqualTo("m1")
+        } finally {
+            migrated.close()
+            context.deleteDatabase("ecr-migration-test.db")
+        }
     }
 }

@@ -9,6 +9,7 @@ import com.easycoderemote.data.local.PendingItemEntity
 import com.easycoderemote.data.local.SessionDao
 import com.easycoderemote.data.local.SessionEntity
 import com.easycoderemote.data.model.AppEvent
+import com.easycoderemote.data.model.MessageInfoDto
 import com.easycoderemote.data.model.PartDto
 import com.easycoderemote.data.model.PendingDto
 import com.easycoderemote.data.model.SessionDto
@@ -162,6 +163,9 @@ class EventApplier(
         val seq = existing?.seq ?: ((messageDao.maxSeq(profileId, sessionId) ?: 0L) + 1)
         val role = data?.jsonObject("info")?.str("role") ?: data?.str("role") ?: "assistant"
         val created = data?.jsonObject("info")?.jsonObject("time")?.get("created")?.jsonPrimitive?.longOrNull ?: 0L
+        val info = data?.jsonObject("info")?.let {
+            runCatching { APP_JSON.decodeFromJsonElement(MessageInfoDto.serializer(), it) }.getOrNull()
+        }
         messageDao.upsert(
             MessageEntity(
                 id = messageId,
@@ -171,6 +175,9 @@ class EventApplier(
                 seq = seq,
                 rawJson = data?.toString() ?: "",
                 timeCreated = created,
+                agent = info?.agent?.takeIf { it.isNotBlank() },
+                providerID = info?.effectiveProviderID(),
+                modelID = info?.effectiveModelID(),
             ),
         )
     }
@@ -263,6 +270,9 @@ class EventApplier(
                     seq = effectiveSeq,
                     rawJson = m.info.toString(),
                     timeCreated = m.info.createdMs,
+                    agent = m.info.agent?.takeIf { it.isNotBlank() },
+                    providerID = m.info.effectiveProviderID(),
+                    modelID = m.info.effectiveModelID(),
                 ),
             )
             var pseq = 0L

@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Session detail header shows the session's active agent and model (`agent: X`,
+  `model: providerID · id`) and updates live via `session.updated`.
+- Assistant message bubbles carry a small `agent · providerID · modelID` caption
+  taken from the message itself (blank parts dropped; hidden when none present).
+- The composer model picker is now a two-level, searchable sheet: pick a provider
+  first, then a model within it (grouped from the fetched `/config` model list),
+  with an in-picker spinner and empty state.
+- The composer variant picker uses the selected model's own `variants` when present,
+  falling back to the common `default/low/medium/high`.
+- Picker chips show the session's active agent/model/variant when no explicit
+  override is set; agent/model/variant overrides are one-shot and clear after a
+  successful message send, and picking a different model resets the variant override.
 - Android app (`android/`, Kotlin + Jetpack Compose, min SDK 26): server profiles with
   TOFU cert pinning, live session list with status badges, streaming session transcript
   with real-time markdown rendering, permission/question approval dialogs, slash

@@ -28,6 +28,10 @@ data class MessageEntity(
     val rawJson: String,
     /** Server creation time (ms epoch); the authoritative transcript order key. */
     val timeCreated: Long = 0,
+    /** Message-local agent/model shown in badges; filled on event/history ingest. */
+    val agent: String? = null,
+    val providerID: String? = null,
+    val modelID: String? = null,
 )
 
 @Entity(tableName = "parts")

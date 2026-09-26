@@ -40,9 +40,21 @@ data class ModelEntryDto(
     val id: String = "",
     val providerID: String? = null,
     val name: String? = null,
+    /** Free-form variant map of this model (keys are variant names). Untyped on purpose. */
+    val variants: JsonElement? = null,
 ) {
     val displayName: String get() = name?.takeIf { it.isNotBlank() } ?: id
+
+    /** Variant options for this model: the keys of `variants`, sorted; common fallback when missing. */
+    fun variantNames(): List<String> {
+        val obj = variants as? JsonObject ?: return COMMON_VARIANTS
+        val keys = obj.keys.filter { it.isNotBlank() }.sorted()
+        return keys.ifEmpty { COMMON_VARIANTS }
+    }
 }
+
+/** Model variants understood when a model does not declare its own list. */
+val COMMON_VARIANTS = listOf("default", "low", "medium", "high")
 
 /** One session from GET /api/v1/sessions. model is tolerant (object or string). */
 @Serializable
@@ -79,6 +91,28 @@ data class SessionDto(
         }
     }
 
+    /** Provider of the session's active model (object form only; string id → null). */
+    fun sessionModelProvider(): String? {
+        val m = model as? JsonObject ?: return null
+        return m["providerID"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    }
+
+    /** Model id of the session's active model (object `id` or plain string). */
+    fun sessionModelId(): String? {
+        val m = model ?: return null
+        return when (m) {
+            is JsonObject -> m["id"]?.jsonPrimitive?.contentOrNull
+            is JsonPrimitive -> m.content.takeIf { it.isNotBlank() }
+            else -> null
+        }
+    }
+
+    /** Variant of the session's active model (object form only). */
+    fun sessionModelVariant(): String? {
+        val m = model as? JsonObject ?: return null
+        return m["variant"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    }
+
     val tokenCount: Long get() = tokens.sumNumbers()
 }
 
@@ -95,6 +129,24 @@ data class SessionMessageDto(
     val parts: List<PartDto> = emptyList(),
 )
 
+/** `providerID · id` canonical label; each part optional, null when both blank. */
+fun providerModelLabel(provider: String?, modelId: String?): String? {
+    val p = provider?.trim().orEmpty()
+    val m = modelId?.trim().orEmpty()
+    return when {
+        p.isEmpty() && m.isEmpty() -> null
+        p.isEmpty() -> m
+        m.isEmpty() -> p
+        else -> "$p · $m"
+    }
+}
+
+/** `agent · provider · id` badge caption with blank parts dropped; null when nothing present. */
+fun badgeLabel(agent: String?, provider: String?, modelId: String?): String? {
+    val parts = listOf(agent, provider, modelId).mapNotNull { it?.trim()?.takeIf { v -> v.isNotEmpty() } }
+    return if (parts.isEmpty()) null else parts.joinToString(" · ")
+}
+
 @Serializable
 data class MessageInfoDto(
     val id: String = "",
@@ -102,12 +154,27 @@ data class MessageInfoDto(
     val role: String? = null,
     val time: JsonElement? = null,
     val model: JsonElement? = null,
+    /** Message-local agent/model of the producing run (flat form; server also
+     *  nests them under `model` as `{id, providerID, variant}`). */
+    val agent: String? = null,
+    val providerID: String? = null,
+    val modelID: String? = null,
 ) {
     val roleLabel: String get() = role ?: "assistant"
 
     /** Server creation time (ms epoch); authoritative for transcript ordering. */
     val createdMs: Long
         get() = (time as? JsonObject)?.get("created")?.jsonPrimitive?.longOrNull ?: 0L
+
+    /** Provider of this message: flat `providerID`, else from the nested `model` object. */
+    fun effectiveProviderID(): String? =
+        providerID?.trim()?.takeIf { it.isNotEmpty() }
+            ?: (model as? JsonObject)?.get("providerID")?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** Model id of this message: flat `modelID`, else from the nested `model` object. */
+    fun effectiveModelID(): String? =
+        modelID?.trim()?.takeIf { it.isNotEmpty() }
+            ?: (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 /** A part (text or tool) inside a message. Tool payloads stay raw JsonElement. */

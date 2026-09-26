@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
 
 class SessionDetailViewModel(
     app: Application,
@@ -148,7 +147,17 @@ class SessionDetailViewModel(
                 repo.sendMessage(sessionId, text, agent.value, model.value, variant.value, queued.value)
             }
             sending.value = false
-            if (outcome?.ok == true) composerText.value = ""
+            if (outcome?.ok == true) {
+                composerText.value = ""
+                // Overrides are one-shot for a real message; slash commands ignore them.
+                if (!text.startsWith("/")) {
+                    val (a, m, v) = ComposerOverrides.clearAfterSend(true, agent.value, model.value, variant.value)
+                    agent.value = a
+                    model.value = m
+                    variant.value = v
+                }
+            }
+            // A failed send keeps the overrides so the user can retry.
         }
     }
 
@@ -174,8 +183,10 @@ class SessionDetailViewModel(
         agent.value = name
     }
 
-    fun selectModel(id: String?) {
-        model.value = id?.let { JsonPrimitive(it) }
+    /** Selects a model by provider+id; switching models resets the variant override. */
+    fun selectModel(providerID: String?, id: String) {
+        model.value = ComposerOverrides.modelOverrideJson(providerID, id)
+        variant.value = null
     }
 
     fun selectVariant(name: String?) {
