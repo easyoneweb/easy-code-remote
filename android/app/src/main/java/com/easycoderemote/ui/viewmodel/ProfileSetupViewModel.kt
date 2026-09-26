@@ -3,6 +3,7 @@ package com.easycoderemote.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.easycoderemote.data.remote.CertProbe
+import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ class ProfileSetupViewModel(app: Application) : RepoViewModel(app) {
     data class UiState(
         val step: Step = Step.BASE_URL,
         val baseUrl: String = "",
+        val name: String = "",
         val probe: CertProbe.Result? = null,
         val token: String = "",
         val fingerprint: String = "",
@@ -30,6 +32,10 @@ class ProfileSetupViewModel(app: Application) : RepoViewModel(app) {
 
     fun setBaseUrl(value: String) {
         _state.value = _state.value.copy(baseUrl = value)
+    }
+
+    fun setName(value: String) {
+        _state.value = _state.value.copy(name = value)
     }
 
     fun runProbe() {
@@ -68,8 +74,11 @@ class ProfileSetupViewModel(app: Application) : RepoViewModel(app) {
         }
         viewModelScope.launch {
             _state.value = s.copy(busy = true, error = null)
+            // Optional display name falls back to the host (then baseUrl) so the
+            // profile is never blank-named.
+            val host = runCatching { URL(s.baseUrl).host }.getOrDefault(s.baseUrl)
             val profile = repo.saveProfile(
-                name = s.baseUrl,
+                name = s.name.trim().ifBlank { host },
                 baseUrl = s.baseUrl,
                 token = s.token,
                 fingerprint = s.fingerprint,

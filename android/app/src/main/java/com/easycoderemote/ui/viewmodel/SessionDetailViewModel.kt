@@ -1,12 +1,14 @@
 package com.easycoderemote.ui.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.easycoderemote.data.local.PendingItemEntity
 import com.easycoderemote.data.model.AppEvent
 import com.easycoderemote.data.model.ServerConfigDto
 import com.easycoderemote.data.model.SessionDto
+import com.easycoderemote.data.model.UiEvent
 import com.easycoderemote.service.LiveEventBus
 import com.easycoderemote.ui.navigation.Routes
 import kotlinx.coroutines.delay
@@ -31,6 +33,7 @@ class SessionDetailViewModel(
     private val pageSize = 200
 
     private companion object {
+        const val TAG = "ECR.Detail"
         /** Minimum gap between automatic older-page retries after a failure. */
         const val LOAD_OLDER_COOLDOWN_MS = 5_000L
 
@@ -142,25 +145,38 @@ class SessionDetailViewModel(
         if (text.isEmpty() || sending.value) return
         viewModelScope.launch {
             sending.value = true
-            val outcome = if (text.startsWith("/")) {
-                val name = text.removePrefix("/").substringBefore(' ').trim()
-                val args = text.removePrefix("/").substringAfter(' ', "").trim().ifBlank { null }
-                if (name.isEmpty()) null else repo.runCommand(sessionId, name, args)
-            } else {
-                repo.sendMessage(sessionId, text, agent.value, model.value, variant.value, queued.value)
-            }
-            sending.value = false
-            if (outcome?.ok == true) {
-                composerText.value = ""
-                // Overrides are one-shot for a real message; slash commands ignore them.
-                if (!text.startsWith("/")) {
-                    val (a, m, v) = ComposerOverrides.clearAfterSend(true, agent.value, model.value, variant.value)
-                    agent.value = a
-                    model.value = m
-                    variant.value = v
+            try {
+                val outcome = if (text.startsWith("/")) {
+                    val name = text.removePrefix("/").substringBefore(' ').trim()
+                    val args = text.removePrefix("/").substringAfter(' ', "").trim().ifBlank { null }
+                    // Edge: `/` alone parses an empty command name — nothing to send.
+                    if (name.isEmpty()) null else repo.runCommand(sessionId, name, args)
+                } else {
+                    repo.sendMessage(sessionId, text, agent.value, model.value, variant.value, queued.value)
                 }
+                if (outcome?.ok == true) {
+                    composerText.value = ""
+                    // Overrides are one-shot for a real message; slash commands ignore them.
+                    if (!text.startsWith("/")) {
+                        val (a, m, v) = ComposerOverrides.clearAfterSend(true, agent.value, model.value, variant.value)
+                        agent.value = a
+                        model.value = m
+                        variant.value = v
+                    }
+                }
+                // outcome.ok == false → failure Snackbar via UiEvent.OperationResult.
+                // outcome == null → silent no-op (empty slash command); nothing to send.
+                // A failed send keeps the composer text and the overrides for retry.
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // Unexpected throwable escaping the repository must neither leave the
+                // button disabled nor stay silent (reported bug: stuck send button).
+                Log.w(TAG, "send failed", e)
+                LiveEventBus.emitUi(UiEvent.OperationResult(false, e.message ?: "Send failed"))
+            } finally {
+                // No code path may leave the send button disabled forever.
+                sending.value = false
             }
-            // A failed send keeps the overrides so the user can retry.
         }
     }
 

@@ -1,5 +1,6 @@
 package com.easycoderemote.data.model
 
+import com.easycoderemote.util.APP_JSON
 import com.easycoderemote.util.asStringOrNull
 import com.easycoderemote.util.str
 import com.easycoderemote.util.sumNumbers
@@ -9,6 +10,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
@@ -55,6 +57,67 @@ data class ModelEntryDto(
 
 /** Model variants understood when a model does not declare its own list. */
 val COMMON_VARIANTS = listOf("default", "low", "medium", "high")
+
+/** One provider from `/config` `providers` (tolerant: object or plain string id). */
+@Serializable
+data class ProviderEntryDto(
+    val id: String = "",
+    val name: String? = null,
+    val displayName: String = "",
+) {
+    /** Best human label: raw `displayName`, else `name`, else the id. */
+    val label: String
+        get() = displayName.ifBlank { name?.takeIf { it.isNotBlank() } ?: id }
+}
+
+/** Tolerant parser over the raw `providers` JSON elements of `/config`. */
+fun parseProviders(raw: List<JsonElement>): List<ProviderEntryDto> = raw.mapNotNull { el ->
+    when (el) {
+        is JsonPrimitive -> ProviderEntryDto(id = el.content)
+        is JsonObject -> ProviderEntryDto(
+            id = el.str("id").ifBlank { el.str("name") },
+            name = el.str("name"),
+            displayName = el.str("displayName"),
+        )
+        else -> null
+    }
+}
+
+/** Display name for a provider id: favors the raw `name`/`displayName`, else the id. */
+fun providerDisplayName(providerID: String, providers: List<JsonElement>): String {
+    val key = providerID.takeIf { it.isNotBlank() } ?: return "unknown"
+    return parseProviders(providers).firstOrNull { it.id == key }?.label?.takeIf { it.isNotBlank() } ?: key
+}
+
+/**
+ * Models grouped by provider id; a blank/missing provider groups under "unknown"
+ * and keys are sorted. Shared by the composer model picker sheet and the config
+ * Providers → provider → models screens.
+ */
+fun groupModelsByProvider(models: List<ModelEntryDto>): Map<String, List<ModelEntryDto>> =
+    models.groupBy { it.providerID?.takeIf { p -> p.isNotBlank() } ?: "unknown" }.toSortedMap()
+
+/**
+ * Tolerant parse of the `POST /message` response — the created kilo message in
+ * the `{info, parts}` shape (docs/protocol.md). Also accepts a `{"message": ...}`
+ * wrapper. Returns null for empty/malformed bodies.
+ */
+fun parseMessageResponse(body: String): SessionMessageDto? {
+    if (body.isBlank()) return null
+    val el = runCatching { APP_JSON.parseToJsonElement(body) }.getOrNull() ?: return null
+    // Some servers frame the created message under a `message` key; unwrap it when
+    // the object itself does not already carry message fields. A direct decode
+    // would silently succeed (ignoreUnknownKeys) with empty defaults, so detect
+    // the wrapper BEFORE decoding rather than falling back after.
+    val message = (el as? JsonObject)?.let { obj ->
+        if (obj.containsKey("info") || obj.containsKey("parts")) obj else obj["message"]
+    } ?: el
+    return runCatching { APP_JSON.decodeFromJsonElement(SessionMessageDto.serializer(), message) }.getOrNull()
+        // A "message" without a usable id is not an echoable message (e.g. an
+        // unexpected `{"status":"ok"}` body): treat it as "no echo" so the
+        // repository never stores a junk empty-id row.
+        ?.takeIf { it.info.id.isNotBlank() }
+}
 
 /** One session from GET /api/v1/sessions. model is tolerant (object or string). */
 @Serializable

@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,12 +21,17 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -44,6 +51,7 @@ fun ProfilesScreen(
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val activeId by viewModel.activeProfileId.collectAsStateWithLifecycle()
     val liveRunning by viewModel.liveRunning.collectAsStateWithLifecycle()
+    var renameTarget by remember { mutableStateOf<Profile?>(null) }
 
     Scaffold(
         topBar = {
@@ -85,10 +93,38 @@ fun ProfilesScreen(
                         viewModel.select(profile.id)
                         onOpenSessions()
                     },
+                    onRename = { renameTarget = profile },
                     onDelete = { viewModel.delete(profile.id) },
                 )
             }
         }
+    }
+
+    renameTarget?.let { profile ->
+        var name by remember(profile.id) { mutableStateOf(profile.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename server") },
+            text = {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Server name") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Blank input = no-op (Repository.renameProfile trims + ignores blank).
+                    viewModel.rename(profile.id, name)
+                    renameTarget = null
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -97,6 +133,7 @@ private fun ProfileCard(
     profile: Profile,
     isActive: Boolean,
     onSelect: () -> Unit,
+    onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -127,6 +164,9 @@ private fun ProfileCard(
                 }
             }
             if (isActive) Text("active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            IconButton(onClick = onRename) {
+                Icon(Icons.Default.Edit, contentDescription = "Rename server")
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete server")
             }

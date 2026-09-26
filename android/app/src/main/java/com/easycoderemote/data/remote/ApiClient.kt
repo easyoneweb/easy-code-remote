@@ -5,6 +5,7 @@ import com.easycoderemote.data.model.PendingDto
 import com.easycoderemote.data.model.ServerConfigDto
 import com.easycoderemote.data.model.SessionDto
 import com.easycoderemote.data.model.SessionMessageDto
+import com.easycoderemote.data.model.parseMessageResponse
 import com.easycoderemote.util.APP_JSON
 import com.easycoderemote.util.decodeTolerantArray
 import java.io.IOException
@@ -85,7 +86,7 @@ class ApiClient(
         variant: String?,
         messageID: String?,
         queued: Boolean,
-    ) {
+    ): SessionMessageDto? {
         val json = buildJsonObject {
             putJsonArray("parts") {
                 addJsonObject {
@@ -99,7 +100,11 @@ class ApiClient(
             variant?.takeIf { it.isNotBlank() }?.let { put("variant", it) }
             if (queued) put("queued", true)
         }
-        post(auth = true, path = "/api/v1/sessions/${enc(sessionId)}/message", jsonBody = json.toString())
+        // POST /message returns the created kilo message (docs/protocol.md); before
+        // this the response body was discarded, so the sent message never showed in
+        // the transcript until SSE echoed it.
+        val body = post(auth = true, path = "/api/v1/sessions/${enc(sessionId)}/message", jsonBody = json.toString())
+        return parseMessageResponse(body)
     }
 
     suspend fun abort(sessionId: String) {
@@ -156,7 +161,7 @@ class ApiClient(
         execute(auth = auth, path = path, body = null)
     }
 
-    private suspend fun post(auth: Boolean, path: String, jsonBody: String): Unit = withContext(Dispatchers.IO) {
+    private suspend fun post(auth: Boolean, path: String, jsonBody: String): String = withContext(Dispatchers.IO) {
         execute(auth = auth, path = path, body = jsonBody)
     }
 

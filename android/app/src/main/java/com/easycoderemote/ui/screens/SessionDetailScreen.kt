@@ -39,6 +39,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -67,10 +69,13 @@ import com.easycoderemote.data.local.PartEntity
 import com.easycoderemote.data.model.ModelEntryDto
 import com.easycoderemote.data.model.ServerConfigDto
 import com.easycoderemote.data.model.SessionDto
+import com.easycoderemote.data.model.UiEvent
 import com.easycoderemote.data.model.badgeLabel
+import com.easycoderemote.data.model.groupModelsByProvider
 import com.easycoderemote.data.model.providerModelLabel
 import com.easycoderemote.data.repo.TranscriptMessage
 import com.easycoderemote.render.markdown.MarkdownText
+import com.easycoderemote.service.LiveEventBus
 import com.easycoderemote.ui.components.LoadingRow
 import com.easycoderemote.ui.components.StatusBadge
 import com.easycoderemote.ui.viewmodel.ComposerOverrides
@@ -105,8 +110,21 @@ fun SessionDetailScreen(
 
     var tab by remember { mutableStateOf(0) }
 
+    // Surfaces operation failures (send, command, approve, ...) that used to be
+    // completely silent: Repository.guarded emits UiEvent.OperationResult(false, …)
+    // for both ApiException and generic failures, and nothing consumed it until now.
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        LiveEventBus.uiEvents.collect { event ->
+            if (event is UiEvent.OperationResult && !event.ok) {
+                snackbarHostState.showSnackbar(event.message ?: "Operation failed")
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.imePadding(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -170,7 +188,12 @@ fun SessionDetailScreen(
                 }
                 Composer(
                     text = composerText,
-                    onTextChange = { viewModel.composerText.value = it },
+                    onTextChange = { newText ->
+                        viewModel.composerText.value = newText
+                        // A stale failure snackbar is cleared as soon as the user
+                        // types again (plan D6: feedback "cleared on next input").
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                    },
                     queued = queued,
                     onQueuedChange = { viewModel.queued.value = it },
                     sending = sending,
@@ -542,11 +565,9 @@ private fun ModelPickerSheet(
     onDismiss: () -> Unit,
 ) {
     // Pre-group by providerID once per config for O(1) level-2 access; name is
-    // only used for a missing-provider bucket (plan: "unknown").
-    val byProvider = remember(models) {
-        models.groupBy { it.providerID?.takeIf { p -> p.isNotBlank() } ?: "unknown" }
-            .toSortedMap()
-    }
+    // only used for a missing-provider bucket (plan: "unknown"). Shared with the
+    // config Providers → provider → models screens.
+    val byProvider = remember(models) { groupModelsByProvider(models) }
     var providerID by remember { mutableStateOf(initialProviderID?.takeIf { it.isNotBlank() }) }
     var search by remember { mutableStateOf(initialSearch.orEmpty()) }
 

@@ -8,6 +8,7 @@ import com.easycoderemote.data.local.PendingItemEntity
 import com.easycoderemote.data.local.Profile
 import com.easycoderemote.data.local.ProfileStore
 import com.easycoderemote.data.local.SecurityStore
+import com.easycoderemote.data.local.toDto
 import com.easycoderemote.data.model.HealthDto
 import com.easycoderemote.data.model.PendingDto
 import com.easycoderemote.data.model.ServerConfigDto
@@ -22,7 +23,6 @@ import com.easycoderemote.service.EventApplier
 import com.easycoderemote.service.LiveEventBus
 import com.easycoderemote.service.LiveSyncState
 import com.easycoderemote.service.ServiceStarter
-import com.easycoderemote.util.APP_JSON
 import java.net.URL
 import java.util.UUID
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,7 +55,11 @@ class Repository(private val appContext: Context) {
     val securityStore = SecurityStore(profileStore)
     private val db: AppDatabase by lazy { AppDatabase.get(context) }
 
-    private var configCache: Pair<ServerConfigDto, Long>? = null
+    /** Per-profile `/config` cache with a shared 60 s TTL. Keyed by profile id so
+     *  switching servers can never leak the previous server's config into the new
+     *  profile's screens (composer pickers, provider/models screens).
+     *  Entries are evicted when the profile is deleted. */
+    private val configCache = HashMap<String, Pair<ServerConfigDto, Long>>()
     private val configCacheTtlMs = 60_000L
 
     // -- helpers -------------------------------------------------------------
@@ -102,10 +106,19 @@ class Repository(private val appContext: Context) {
 
     suspend fun setActiveProfile(id: String?) = profileStore.setActive(id)
 
+    /** Renames an existing profile's display name; blank input is a no-op. */
+    suspend fun renameProfile(id: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        val current = profileStore.profiles.first().firstOrNull { it.id == id } ?: return
+        profileStore.saveProfile(current.copy(name = trimmed))
+    }
+
     suspend fun deleteProfile(id: String) {
         val wasActive = profileStore.activeProfileId.first() == id
         profileStore.deleteProfile(id)
         securityStore.deleteToken(id)
+        configCache.remove(id)
         db.sessionDao().clearProfile(id)
         db.messageDao().clearProfile(id)
         db.partDao().clearProfile(id)
@@ -141,15 +154,13 @@ class Repository(private val appContext: Context) {
 
     fun observeSessions(): Flow<List<SessionDto>> = withProfile { pid ->
         db.sessionDao().observeSessions(pid).map { entities ->
-            entities.mapNotNull { e ->
-                runCatching { APP_JSON.decodeFromString(SessionDto.serializer(), e.rawJson) }.getOrNull()
-            }
+            entities.mapNotNull { it.toDto() }
         }
     }
 
     fun observeSession(sessionId: String): Flow<SessionDto?> = withProfile { pid ->
         db.sessionDao().observeSession(pid, sessionId).map { e ->
-            e?.let { runCatching { APP_JSON.decodeFromString(SessionDto.serializer(), it.rawJson) }.getOrNull() }
+            e?.toDto()
         }
     }
 
@@ -199,11 +210,11 @@ class Repository(private val appContext: Context) {
     }
 
     suspend fun fetchConfig(): ServerConfigDto {
-        val cached = configCache
+        val (api, pid) = activeApi() ?: return ServerConfigDto()
+        val cached = configCache[pid]
         if (cached != null && System.currentTimeMillis() - cached.second < configCacheTtlMs) return cached.first
-        val api = activeApi()?.first ?: return ServerConfigDto()
         val cfg = api.config()
-        configCache = cfg to System.currentTimeMillis()
+        configCache[pid] = cfg to System.currentTimeMillis()
         return cfg
     }
 
@@ -219,8 +230,13 @@ class Repository(private val appContext: Context) {
         variant: String?,
         queued: Boolean,
     ): OperationOutcome = guarded("send") {
-        val (api, _) = activeApi() ?: return@guarded OperationOutcome(false, "No active profile")
-        api.sendMessage(sessionId, text, agent, modelJson, variant, messageID = null, queued = queued)
+        val (api, pid) = activeApi() ?: return@guarded OperationOutcome(false, "No active profile")
+        // Optimistic echo: POST /message returns the created kilo message; store it
+        // locally so the sent bubble appears in the transcript immediately even when
+        // live sync / SSE echo is off or lagging. The later SSE echo is idempotent
+        // (upsert keyed by message id via the same storeHistory path).
+        val created = api.sendMessage(sessionId, text, agent, modelJson, variant, messageID = null, queued = queued)
+        if (created != null) applier(pid).storeHistory(sessionId, listOf(created), olderPage = false)
         OperationOutcome(true)
     }
 
@@ -266,6 +282,10 @@ class Repository(private val appContext: Context) {
             LiveEventBus.emitUi(UiEvent.OperationResult(false, e.message))
             OperationOutcome(false, e.message)
         } catch (e: Exception) {
+            // A failed phone→server operation must never be silent (a stuck,
+            // silently-dropped send is the reported bug): surface it to the UI
+            // the same way an ApiException is surfaced.
+            LiveEventBus.emitUi(UiEvent.OperationResult(false, e.message ?: "unknown error"))
             OperationOutcome(false, e.message ?: "unknown error")
         }
     }

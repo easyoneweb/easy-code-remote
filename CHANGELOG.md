@@ -22,8 +22,51 @@ adheres to [Semantic Versioning](https://semver.org/).
   successful message send, and picking a different model resets the variant override.
 - The session detail screen re-fetches pending permission/question payloads on the
   live-edge poll, so approval banners appear even when the SSE stream is down.
+- Servers can be given a friendly name: an optional "Server name" field in the
+  connect wizard and a rename action on the Servers list (blank falls back to the
+  host, then the URL); the name survives relaunch and re-adding the same `baseUrl`
+  updates the existing entry.
+- The config screen now starts with a Providers overview: each provider row shows
+  its display name and model count and opens a dedicated provider → model list
+  (id + mono id + variants, searchable), reusing the composer picker's grouping.
+- The sessions list loads progressively: the first 30 sessions render immediately
+  and more appear as you scroll. Archived sessions are hidden by default behind a
+  toolbar toggle ("show archived"), and the first visit after connecting a server
+  fills the list even when live sync is off.
+- Sent messages appear in the transcript immediately: the `POST /message` response
+  (the created kilo message) is echoed into the local cache instead of waiting for
+  the SSE stream to echo it back.
+
+### Changed
+
+- Session status badges update live from the SSE stream (status, permission and
+  question events, and kilo's `session.idle` run-finished event) without needing a
+  manual reload.
+- The live-sync foreground-service notification now always shows the real stream
+  state ("Connecting to server…" → "Live sync connected" → "Reconnecting…") and
+  tapping it opens the app, instead of a forever-stale "Starting live sync…".
 
 ### Fixed
+
+- Session status stayed stale under live sync: the derived `status`/`waitingReason`
+  columns maintained from status-only SSE events were ignored by the display path,
+  so badges froze until a full `/sessions` refetch. The list/detail now overlay the
+  derived columns onto the raw snapshot, and `session.idle` flips a running session
+  back to idle live.
+- Switching servers while live sync was on kept streaming the OLD server's events
+  into the old profile's rows (the profile collector early-returned when a stream
+  already existed). Switching now tears down and reconnects the stream to the new
+  server.
+- The `/config` cache was a single global entry that leaked the previous server's
+  config into the new server's screens within 60 s after a switch. It is now cached
+  per active profile and evicted on profile delete.
+- Permission/question notifications displayed raw JSON as their body instead of a
+  readable summary (the approval-sheet text). They now use the same readable
+  extractors the approval screen renders, capped for notification display.
+- A failed send could leave the send button disabled forever with the message
+  silently dropped. Sends are now wrapped so the button always re-enables, generic
+  failures surface as a Snackbar (not just `ApiException`s), and the optimistic
+  echo shows the sent bubble instantly.
 
 - Transcript messages with `question`/tool parts are no longer silently dropped:
   kilo sends those parts with a `{status, input}` object in `state`, which used to

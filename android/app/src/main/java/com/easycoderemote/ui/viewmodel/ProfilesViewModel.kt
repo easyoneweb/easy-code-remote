@@ -30,5 +30,9 @@ class ProfilesViewModel(app: Application) : RepoViewModel(app) {
         viewModelScope.launch { repo.deleteProfile(id) }
     }
 
+    fun rename(id: String, name: String) {
+        viewModelScope.launch { repo.renameProfile(id, name) }
+    }
+
     fun stopLive() = repo.stopLiveSync()
 }

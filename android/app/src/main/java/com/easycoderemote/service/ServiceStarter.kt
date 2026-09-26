@@ -1,5 +1,6 @@
 package com.easycoderemote.service
 
+import android.annotation.SuppressLint
 import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,10 @@ import androidx.core.content.ContextCompat
  */
 object ServiceStarter {
 
+    // @SuppressLint("NewApi"): `ForegroundServiceStartNotAllowedException` is an
+    // API-31+ class but can only ever be THROWN on API 31+; on older builds this
+    // catch block is a harmless no-op, so the class reference is safe.
+    @SuppressLint("NewApi")
     fun start(context: Context): Boolean {
         return try {
             val intent = Intent(context, LiveSyncService::class.java)

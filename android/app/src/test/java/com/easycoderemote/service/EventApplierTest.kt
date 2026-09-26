@@ -179,6 +179,18 @@ class EventApplierTest {
     }
 
     @Test
+    fun sessionIdleRefreshesRunningStatusToIdle() = runTest {
+        // A raw snapshot puts the session in `busy` (derived → `running`); the
+        // protocol-defined `session.idle` (run finished) event must flip it to
+        // `idle` live instead of staying "running" until a full refetch.
+        applier.apply(AppEvent.SessionCreated("ses_1", SessionDto(id = "ses_1", status = "busy"), null, 1))
+        assertThat(db.sessionDao().observeSession("prof_1", "ses_1").first()?.status).isEqualTo("running")
+
+        applier.apply(AppEvent.SessionIdle("ses_1", 2))
+        assertThat(db.sessionDao().observeSession("prof_1", "ses_1").first()?.status).isEqualTo("idle")
+    }
+
+    @Test
     fun replaceAllSessionsRemovesStale() = runTest {
         applier.apply(AppEvent.SessionCreated("ses_old", SessionDto(id = "ses_old"), null, 1))
         applier.replaceAllSessions(listOf(SessionDto(id = "ses_new", title = "N")))

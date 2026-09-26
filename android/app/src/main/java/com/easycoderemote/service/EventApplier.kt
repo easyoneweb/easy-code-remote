@@ -76,9 +76,16 @@ class EventApplier(
                 clearPending("question", event.sessionID)
                 refreshSessionStatus(event.sessionID)
             }
+            is AppEvent.SessionIdle -> {
+                // The protocol-defined "run finished" event. A raw status snapshot
+                // may never arrive, so without this a running→idle session stays
+                // "running" until a full refetch/re-snapshot.
+                statusComputer.onRawStatus(event.sessionID, "idle")
+                refreshSessionStatus(event.sessionID)
+            }
             is AppEvent.ServerConnected, is AppEvent.ResyncRequired,
             is AppEvent.EngineConnected, is AppEvent.EngineDisconnected,
-            is AppEvent.SessionError, is AppEvent.SessionIdle,
+            is AppEvent.SessionError,
             is AppEvent.SessionCompacting -> Unit
         }
     }

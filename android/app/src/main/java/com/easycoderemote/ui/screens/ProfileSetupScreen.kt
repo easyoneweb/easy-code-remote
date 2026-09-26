@@ -68,6 +68,17 @@ fun ProfileSetupScreen(
                         enabled = !state.busy,
                     )
                     Spacer(Modifier.height(12.dp))
+                    // Optional display name (plan D4); blank falls back to the host.
+                    OutlinedTextField(
+                        value = state.name,
+                        onValueChange = viewModel::setName,
+                        label = { Text("Server name (optional)") },
+                        placeholder = { Text("Home PC") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        enabled = !state.busy,
+                    )
+                    Spacer(Modifier.height(12.dp))
                     if (state.busy) {
                         CircularProgressIndicator()
                     } else {

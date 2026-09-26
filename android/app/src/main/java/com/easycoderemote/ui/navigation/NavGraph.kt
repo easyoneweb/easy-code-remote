@@ -14,6 +14,7 @@ import com.easycoderemote.ui.screens.CertChangedScreen
 import com.easycoderemote.ui.screens.ConfigScreen
 import com.easycoderemote.ui.screens.ProfileSetupScreen
 import com.easycoderemote.ui.screens.ProfilesScreen
+import com.easycoderemote.ui.screens.ProviderModelsScreen
 import com.easycoderemote.ui.screens.SessionDetailScreen
 import com.easycoderemote.ui.screens.SessionsScreen
 import com.easycoderemote.ui.screens.SettingsScreen
@@ -22,6 +23,7 @@ import com.easycoderemote.ui.viewmodel.CertChangedViewModel
 import com.easycoderemote.ui.viewmodel.ConfigViewModel
 import com.easycoderemote.ui.viewmodel.ProfileSetupViewModel
 import com.easycoderemote.ui.viewmodel.ProfilesViewModel
+import com.easycoderemote.ui.viewmodel.ProviderModelsViewModel
 import com.easycoderemote.ui.viewmodel.SessionDetailViewModel
 import com.easycoderemote.ui.viewmodel.SessionsViewModel
 import com.easycoderemote.ui.viewmodel.SettingsViewModel
@@ -78,7 +80,18 @@ fun AppNavHost(navController: NavHostController, certChanged: Boolean) {
         }
         composable(Routes.ROUTE_CONFIG) {
             val vm: ConfigViewModel = viewModel()
-            ConfigScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            ConfigScreen(
+                viewModel = vm,
+                onOpenProvider = { pid -> navController.navigate(Routes.providerModels(pid)) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.ROUTE_PROVIDER_MODELS,
+            arguments = listOf(navArgument(Routes.ARG_PROVIDER_ID) { type = NavType.StringType }),
+        ) { entry ->
+            val vm: ProviderModelsViewModel = viewModel(entry)
+            ProviderModelsScreen(viewModel = vm, onBack = { navController.popBackStack() })
         }
         composable(Routes.ROUTE_SETTINGS) {
             val vm: SettingsViewModel = viewModel()

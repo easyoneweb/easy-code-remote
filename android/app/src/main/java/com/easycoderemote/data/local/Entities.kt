@@ -2,6 +2,24 @@ package com.easycoderemote.data.local
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.easycoderemote.data.model.SessionDto
+import com.easycoderemote.util.APP_JSON
+
+/**
+ * Decodes [SessionEntity.rawJson] into a [SessionDto] and overlays the derived
+ * `status`/`waitingReason` columns (maintained by [com.easycoderemote.service.EventApplier]
+ * via `statusComputer`) over the snapshot values. Status-only SSE events never
+ * rewrite `rawJson`, so without this overlay the session list/detail would keep
+ * showing the stale snapshot status until a full `/sessions` refetch.
+ *
+ * Returns null when the raw JSON cannot be decoded (blank/unknown shape), so
+ * callers can drop the entity gracefully.
+ */
+fun SessionEntity.toDto(): SessionDto? {
+    val decoded = runCatching { APP_JSON.decodeFromString(SessionDto.serializer(), rawJson) }.getOrNull()
+        ?: return null
+    return decoded.copy(status = status, waitingReason = waitingReason)
+}
 
 @Entity(tableName = "sessions")
 data class SessionEntity(

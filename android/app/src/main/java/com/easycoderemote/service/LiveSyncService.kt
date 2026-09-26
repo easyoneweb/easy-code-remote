@@ -12,6 +12,8 @@ import com.easycoderemote.data.local.SecurityStore
 import com.easycoderemote.data.model.AppEvent
 import com.easycoderemote.data.model.Envelope
 import com.easycoderemote.data.model.UiEvent
+import com.easycoderemote.data.model.permissionSummary
+import com.easycoderemote.data.model.questionText
 import com.easycoderemote.data.remote.ApiClient
 import com.easycoderemote.data.remote.LiveStream
 import java.security.cert.CertificateException
@@ -33,6 +35,10 @@ class LiveSyncService : LifecycleService() {
 
     private companion object {
         const val TAG = "ECR.Svc"
+
+        /** Notification body length cap: keeps long question/permission summaries
+         *  notification-safe (the full text stays in the approval sheet). */
+        const val NOTIF_BODY_CAP = 300
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -64,11 +70,19 @@ class LiveSyncService : LifecycleService() {
             profileStore.activeProfileId.collect { id ->
                 Log.i(TAG, "activeProfileId -> $id (current=${profileId})")
                 if (id != profileId) {
-                    if (id == null) {
-                        tearDown()
-                        stopSelf()
-                    } else {
-                        connectIfNeeded(id)
+                    when {
+                        // No active profile: tear the stream down and stop the service.
+                        id == null -> {
+                            tearDown()
+                            stopSelf()
+                        }
+                        // Stream alive on the OLD server: switching servers must stop
+                        // following the old profile's events (before, connectIfNeeded
+                        // early-returned and the old server kept writing into the old
+                        // profile's Room rows).
+                        liveStream != null -> reconnect(id)
+                        // First connect: nothing streaming yet.
+                        else -> connectIfNeeded(id)
                     }
                 }
             }
@@ -141,7 +155,17 @@ class LiveSyncService : LifecycleService() {
             scope = serviceScope,
             cursorProvider = { profileStore.cursor(profileId) },
             onEnvelope = { env -> serviceScope.launch { handleEnvelope(env) } },
-            onState = { state -> LiveSyncState.update(state) },
+            onState = { state ->
+                LiveSyncState.update(state)
+                // The FGS notification must always reflect the real stream state
+                // (Connecting… → Live sync connected → Reconnecting…) instead of a
+                // forever-stale "Starting live sync…" (plan: D5). Only updates the
+                // notification; never cancels it — it is non-dismissible while the
+                // service runs (Android FGS contract).
+                runCatching {
+                    startForeground(Notifier.NOTIF_LIVE, notifier.foreground(notifier.foregroundStateLabel(state)))
+                }.onFailure { t -> Log.w(TAG, "foreground update failed: ${t.message}") }
+            },
             onFailure = { t -> handleFailure(t) },
         )
         liveStream?.start()
@@ -186,11 +210,11 @@ class LiveSyncService : LifecycleService() {
         when (event) {
             is AppEvent.PermissionAsked -> {
                 val title = sessionTitle(event.sessionID)
-                notifier.permissionAsked(event.sessionID, title, event.data?.toString() ?: "Permission requested")
+                notifier.permissionAsked(event.sessionID, title, notifBody(event.data.permissionSummary(), "Permission requested"))
             }
             is AppEvent.QuestionAsked -> {
                 val title = sessionTitle(event.sessionID)
-                notifier.questionAsked(event.sessionID, title, event.data?.toString() ?: "Question asked")
+                notifier.questionAsked(event.sessionID, title, notifBody(event.data.questionText(), "Question asked"))
             }
             is AppEvent.EngineDisconnected -> notifier.engineDisconnected(event.reason ?: "engine unreachable")
             is AppEvent.EngineConnected -> notifier.engineReconnected()
@@ -203,6 +227,12 @@ class LiveSyncService : LifecycleService() {
             is AppEvent.SessionIdle -> maybeNotifyCompletionIdle(event.sessionID)
             else -> Unit
         }
+    }
+
+    /** Bat-safe notification body: readable summary, capped for notification display. */
+    private fun notifBody(summary: String?, fallback: String): String {
+        val text = summary?.takeIf { it.isNotBlank() } ?: fallback
+        return text.take(NOTIF_BODY_CAP)
     }
 
     private suspend fun maybeNotifyCompletion(event: AppEvent.SessionStatus) {
