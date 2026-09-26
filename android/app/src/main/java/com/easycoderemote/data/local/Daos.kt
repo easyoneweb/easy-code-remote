@@ -73,6 +73,9 @@ interface PartDao {
     @Query("SELECT * FROM parts WHERE profileId = :profileId AND sessionId = :sessionId AND messageId = :messageId ORDER BY seq ASC")
     fun observeParts(profileId: String, sessionId: String, messageId: String): Flow<List<PartEntity>>
 
+    @Query("SELECT * FROM parts WHERE profileId = :profileId AND sessionId = :sessionId ORDER BY seq ASC")
+    fun observePartsForSession(profileId: String, sessionId: String): Flow<List<PartEntity>>
+
     @Query("SELECT * FROM parts WHERE profileId = :profileId AND sessionId = :sessionId AND messageId = :messageId AND id = :partId")
     fun observePart(profileId: String, sessionId: String, messageId: String, partId: String): Flow<PartEntity?>
 

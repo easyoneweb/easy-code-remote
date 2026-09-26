@@ -230,11 +230,13 @@ private fun TranscriptList(
     // Live-edge autoscroll: stay pinned to the newest message while the user
     // hasn't scrolled into history (plan §5.8). Re-anchor when the newest
     // message's content grows (streaming) so the tail of the active block stays
-    // visible instead of being pushed below the fold.
+    // visible instead of being pushed below the fold. Instant jump (never
+    // animate), and only while actually pinned at the live edge — never during
+    // an active scroll into history, so large transcripts never stutter.
     val newest = items.firstOrNull()
     val newestContentLen = newest?.parts?.sumOf { it.text.length } ?: 0
     LaunchedEffect(items.size, newest?.message?.id, newestContentLen) {
-        if (items.isNotEmpty() && listState.firstVisibleItemIndex <= 2) {
+        if (items.isNotEmpty() && listState.firstVisibleItemIndex <= 1) {
             listState.scrollToItem(0)
         }
     }

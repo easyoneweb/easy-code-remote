@@ -29,6 +29,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   kilo sends those parts with a `{status, input}` object in `state`, which used to
   fail `PartDto` decoding and made the tolerant array decoder discard the whole
   message (assistant replies right before a pending question never appeared).
+- Transcript scrolling is smooth on high-refresh devices: the live transcript flow
+  used to join one Room parts-flow per message (thousands of concurrent flows that
+  re-fanned out on every streaming token). It now combines a single bulk parts
+  query with a trailing debounce, so streaming bursts coalesce into one recomposition
+  instead of re-rendering the whole visible list per token; the live-edge autoscroll
+  additionally only re-anchors while the user is actually pinned to the newest message.
 - Android app (`android/`, Kotlin + Jetpack Compose, min SDK 26): server profiles with
   TOFU cert pinning, live session list with status badges, streaming session transcript
   with real-time markdown rendering, permission/question approval dialogs, slash

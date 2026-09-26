@@ -29,6 +29,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -152,19 +154,21 @@ class Repository(private val appContext: Context) {
     }
 
     fun observeTranscript(sessionId: String): Flow<List<TranscriptMessage>> = withProfile { pid ->
-        db.messageDao().observeMessages(pid, sessionId).flatMapLatest { messages ->
-            if (messages.isEmpty()) {
-                emptyFlow()
-            } else {
-                val partFlows = messages.map { m ->
-                    db.partDao().observeParts(pid, sessionId, m.id).map { parts -> m to parts }
-                }
-                combine(partFlows) { arr ->
-                    arr.toList().map { (m, p) -> TranscriptMessage(m, p) }
-                        .sortedWith(compareBy({ it.message.timeCreated }, { it.message.seq }))
-                }
-            }
+        combine(
+            db.messageDao().observeMessages(pid, sessionId),
+            db.partDao().observePartsForSession(pid, sessionId),
+        ) { messages, parts ->
+            val byMessage = parts.groupBy { it.messageId }
+            messages
+                .map { m -> TranscriptMessage(m, byMessage[m.id].orEmpty()) }
+                .sortedWith(compareBy({ it.message.timeCreated }, { it.message.seq }))
         }
+            // Streaming updates can raise dozens of Room emissions per second; a
+            // trailing debounce coalesces them into one recomposition per burst
+            // instead of re-rendering the whole visible list on every token
+            // (fixes the janky transcript scroll on high-refresh devices).
+            .debounce(120L)
+            .distinctUntilChanged()
     }
 
     fun observePending(sessionId: String): Flow<List<PendingItemEntity>> = withProfile { pid ->
