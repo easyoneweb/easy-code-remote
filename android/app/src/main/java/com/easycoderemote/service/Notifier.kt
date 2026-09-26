@@ -72,7 +72,7 @@ class Notifier(private val context: Context) {
 
     fun foreground(title: String): Notification =
         NotificationCompat.Builder(context, CHANNEL_LIVE)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.app_name))
             .setContentText(title)
             .setContentIntent(liveIntent())
@@ -126,7 +126,7 @@ class Notifier(private val context: Context) {
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled()) return
         val builder = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
