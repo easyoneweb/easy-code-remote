@@ -358,7 +358,8 @@ func (s *Server) HandlePermission(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "action must be allow or deny", false)
 		return
 	}
-	if err := s.K.PermissionReply(ctx, req.PermissionID, reply, req.Message, false); err != nil {
+	c := s.clientOwningPermission(ctx, req.PermissionID)
+	if err := c.PermissionReply(ctx, req.PermissionID, reply, req.Message, false); err != nil {
 		writeKiloError(w, err)
 		return
 	}
@@ -374,7 +375,7 @@ func (s *Server) HandlePermission(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := s.K.PermissionAlwaysRules(ctx, req.PermissionID, approved, denied); err != nil {
+		if err := c.PermissionAlwaysRules(ctx, req.PermissionID, approved, denied); err != nil {
 			writeKiloError(w, err)
 			return
 		}
@@ -416,8 +417,13 @@ func (s *Server) HandleQuestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request", "questionID is required", false)
 		return
 	}
+	// The supervised kilo serve is project-scoped; a session shown on the phone
+	// may live in any discoverable `kilo serve` (VSCode windows, CLI TUIs), and
+	// the pending question only sits in the queue of the process that asked it.
+	// Route the reply to the serve that owns the question (supervised first).
+	c := s.clientOwningQuestion(ctx, req.QuestionID)
 	if req.Action == "reject" {
-		if err := s.K.QuestionReject(ctx, req.QuestionID); err != nil {
+		if err := c.QuestionReject(ctx, req.QuestionID); err != nil {
 			writeKiloError(w, err)
 			return
 		}
@@ -426,7 +432,7 @@ func (s *Server) HandleQuestion(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "bad_request", "answers are required (or action:reject)", false)
 			return
 		}
-		if err := s.K.QuestionReply(ctx, req.QuestionID, req.Answers); err != nil {
+		if err := c.QuestionReply(ctx, req.QuestionID, req.Answers); err != nil {
 			writeKiloError(w, err)
 			return
 		}

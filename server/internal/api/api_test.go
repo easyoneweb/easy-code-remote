@@ -237,6 +237,81 @@ func TestWriteErrorBody(t *testing.T) {
 	}
 }
 
+func TestHandleQuestionRoutesToOwningServe(t *testing.T) {
+	// Sessions can live on any discoverable `kilo serve` (VSCode windows). The
+	// question's pending queue belongs to the serve that asked it, so the reply
+	// must be routed there — the supervised serve alone 404s.
+	var supervisedAnswered int
+	supervised := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/session/ses_x":
+			_, _ = w.Write([]byte(`{"id":"ses_x"}`))
+		case "/question":
+			_, _ = w.Write([]byte(`[]`)) // supervised does NOT own the question
+		case "/question/q_2/reply":
+			supervisedAnswered++
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer supervised.Close()
+
+	var extraAnswered bool
+	extra := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/question":
+			_, _ = w.Write([]byte(`[{"id":"q_2","sessionID":"ses_x"}]`)) // extra owns it
+		case "/question/q_2/reply":
+			extraAnswered = true
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer extra.Close()
+
+	extraPort := mustPort(t, extra.URL)
+	s := New(newKiloClientFor(t, supervised), store.New(), supervisor.New("/nonexistent/kilo", "127.0.0.1", 1, "x", nil), "test", nil)
+	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
+		"info": map[string]any{"id": "ses_x", "title": "X"},
+	}})
+	s.extraMu.Lock()
+	s.extraStreams[extraPort] = &extraStream{
+		kc:     newKiloClientFor(t, extra),
+		port:   extraPort,
+		cancel: func() {},
+	}
+	s.extraMu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ses_x/question", strings.NewReader(
+		`{"questionID":"q_2","answers":[["label"]]}`,
+	))
+	req.SetPathValue("id", "ses_x")
+	s.HandleQuestion(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
+	}
+	if !extraAnswered || supervisedAnswered != 0 {
+		t.Fatalf("reply routed wrong: extra=%v supervised=%d", extraAnswered, supervisedAnswered)
+	}
+}
+
+func mustPort(t *testing.T, url string) int {
+	t.Helper()
+	host := strings.TrimPrefix(url, "http://")
+	parts := strings.Split(host, ":")
+	if len(parts) != 2 {
+		t.Fatalf("test URL %q lacks port", url)
+	}
+	n, err := strconv.Atoi(parts[1])
+	if err != nil {
+		t.Fatalf("bad port in %q", url)
+	}
+	return n
+}
+
 func TestHandleQuestionContractAnswersAreNestedArrays(t *testing.T) {
 	// Kilo's schema (see kilo 7.7.9 bundle) is
 	// `QuestionReply = { answers: QuestionAnswer[] }` where each QuestionAnswer is

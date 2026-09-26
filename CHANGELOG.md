@@ -42,6 +42,12 @@ adheres to [Semantic Versioning](https://semver.org/).
   upstream ("cannot unmarshal object into questionReq.answers.0 of type string"
   and kilo's "Expected QuestionAnswer, got ..."), so answering a question in the
   approvals sheet never worked end-to-end.
+- Permission and question replies are routed to the `kilo serve` that actually
+  owns the pending request. Sessions are aggregated across every discoverable
+  serve (VSCode windows / CLI TUIs), each project-scoped, and a pending
+  question/permission only sits in the queue of the process that asked it — the
+  supervised serve alone returned `Question request not found` ("session not
+  found on the kilo engine") for sessions owned by another serve.
 - Android app (`android/`, Kotlin + Jetpack Compose, min SDK 26): server profiles with
   TOFU cert pinning, live session list with status badges, streaming session transcript
   with real-time markdown rendering, permission/question approval dialogs, slash

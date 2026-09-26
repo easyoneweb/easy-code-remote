@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -207,6 +208,48 @@ func (s *Server) pendingClients() []*kilo.Client {
 		out = append(out, x.kc)
 	}
 	return out
+}
+
+// clientOwningQuestion returns the kilo client whose pending question queue
+// contains requestID (the supervised serve first), or the supervised client
+// when no serve lists it. A question lives only in the queue of the serve that
+// asked it, so replies must go there — the supervised serve alone 404s for
+// sessions owned by another discoverable `kilo serve`.
+func (s *Server) clientOwningQuestion(ctx context.Context, requestID string) *kilo.Client {
+	for _, c := range s.pendingClients() {
+		qs, err := c.QuestionList(ctx)
+		if err != nil {
+			continue
+		}
+		for _, q := range qs {
+			var id struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(q, &id) == nil && id.ID == requestID {
+				return c
+			}
+		}
+	}
+	return s.K
+}
+
+// clientOwningPermission mirrors clientOwningQuestion for permission requests.
+func (s *Server) clientOwningPermission(ctx context.Context, requestID string) *kilo.Client {
+	for _, c := range s.pendingClients() {
+		perms, err := c.PermissionList(ctx)
+		if err != nil {
+			continue
+		}
+		for _, p := range perms {
+			var id struct {
+				ID string `json:"id"`
+			}
+			if json.Unmarshal(p, &id) == nil && id.ID == requestID {
+				return c
+			}
+		}
+	}
+	return s.K
 }
 
 func (s *Server) pollPendingLoop(ctx context.Context) {
