@@ -442,7 +442,7 @@ private fun Composer(
                 var showModelPicker by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { showModelPicker = true }, modifier = Modifier.padding(vertical = 2.dp)) {
                     Text(
-                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName, session)}",
+                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName, session).take(14)}",
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                     )
@@ -571,7 +571,12 @@ private fun ModelPickerSheet(
                     models = providerModels,
                     search = search,
                     onSearchChange = { search = it },
-                    onSelect = { onSelect(pid, it) },
+                    onSelect = { modelId ->
+                        // Pass the model's actual providerID (null for the "unknown"
+                        // bucket), never the display group key.
+                        val realProvider = providerModels.firstOrNull { it.id == modelId }?.providerID
+                        onSelect(realProvider, modelId)
+                    },
                     onBack = { providerID = null },
                 )
             }

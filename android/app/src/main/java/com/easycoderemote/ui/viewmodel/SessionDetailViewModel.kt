@@ -183,10 +183,11 @@ class SessionDetailViewModel(
         agent.value = name
     }
 
-    /** Selects a model by provider+id; switching models resets the variant override. */
+    /** Selects a model by provider+id; switching to a different model resets the variant override. */
     fun selectModel(providerID: String?, id: String) {
-        model.value = ComposerOverrides.modelOverrideJson(providerID, id)
-        variant.value = null
+        val next = ComposerOverrides.modelOverrideJson(providerID, id)
+        if (next != model.value) variant.value = null
+        model.value = next
     }
 
     fun selectVariant(name: String?) {

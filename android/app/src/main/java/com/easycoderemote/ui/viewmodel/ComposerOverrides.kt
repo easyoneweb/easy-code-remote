@@ -1,5 +1,6 @@
 package com.easycoderemote.ui.viewmodel
 
+import com.easycoderemote.data.model.COMMON_VARIANTS
 import com.easycoderemote.data.model.ModelEntryDto
 import com.easycoderemote.data.model.SessionDto
 import com.easycoderemote.data.model.providerModelLabel
@@ -59,5 +60,5 @@ object ComposerOverrides {
 
     /** Variant options for the model picker context: the chosen model's own list when known. */
     fun variantOptions(chosenModel: ModelEntryDto?): List<String> =
-        chosenModel?.variantNames() ?: listOf("default", "low", "medium", "high")
+        chosenModel?.variantNames() ?: COMMON_VARIANTS
 }
