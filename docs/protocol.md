@@ -180,12 +180,15 @@ Resolve a permission request raised for this session.
 Answer or reject a question asked in this session.
 
 ```json
-{"questionID":"q_...", "answers":["option label"]}
+{"questionID":"q_...", "answers":[["option label"]]}
 {"questionID":"q_...", "action":"reject"}
 ```
 
-Maps to kilo `/question/{requestID}/reply` `{"answers":[...]}` or
-`/question/{requestID}/reject`.
+Maps to kilo `/question/{requestID}/reply` `{"answers":[["label"],...]}` or
+`/question/{requestID}/reject`. Each element of `answers` is itself an array of
+selected option labels, one entry per asked question in order; a single-select
+reply for one question is therefore `answers:[["label"]]`. Unknown/invalid answer
+shapes are rejected with kilo's `BadRequest.Payload` error.
 
 ### `GET /api/v1/config`
 

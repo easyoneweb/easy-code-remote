@@ -492,8 +492,11 @@ func (c *Client) QuestionList(ctx context.Context) ([]json.RawMessage, error) {
 	return out, nil
 }
 
-// QuestionReply answers a question with the given option labels.
-func (c *Client) QuestionReply(ctx context.Context, requestID string, answers []string) error {
+// QuestionReply answers a question. Kilo's schema is
+// `QuestionReply = { answers: QuestionAnswer[] }` where each QuestionAnswer is
+// itself an array of selected option labels (one entry per asked question, in
+// order), so a single-select reply is `answers: [["label"]]`.
+func (c *Client) QuestionReply(ctx context.Context, requestID string, answers [][]string) error {
 	data, status, err := c.Post(ctx, "/question/"+url.PathEscape(requestID)+"/reply", nil, map[string]any{"answers": answers})
 	if err != nil {
 		return err

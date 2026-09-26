@@ -237,9 +237,12 @@ func TestWriteErrorBody(t *testing.T) {
 	}
 }
 
-func TestHandleQuestionContractAnswersArePlainStrings(t *testing.T) {
-	// The wire contract (docs/protocol.md) is `{"questionID":"q_...","answers":["label"]}`.
-	// Assert the server relays exactly that shape to kilo and answers its post request.
+func TestHandleQuestionContractAnswersAreNestedArrays(t *testing.T) {
+	// Kilo's schema (see kilo 7.7.9 bundle) is
+	// `QuestionReply = { answers: QuestionAnswer[] }` where each QuestionAnswer is
+	// an array of selected labels, one per asked question in order. So a
+	// single-select reply is `{"answers":[["label"]]}` and the server must relay
+	// exactly that shape to kilo.
 	var gotAnswers any
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -257,7 +260,7 @@ func TestHandleQuestionContractAnswersArePlainStrings(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ses_x/question", strings.NewReader(
-		`{"questionID":"q_1","answers":["DB-draft + fast poll"]}`,
+		`{"questionID":"q_1","answers":[["DB-draft + fast poll (Recommended)"]]}`,
 	))
 	req.SetPathValue("id", "ses_x")
 	s.HandleQuestion(rec, req)
@@ -267,23 +270,27 @@ func TestHandleQuestionContractAnswersArePlainStrings(t *testing.T) {
 	if gotPath != "/question/q_1/reply" {
 		t.Fatalf("kilo path = %q", gotPath)
 	}
-	strs, ok := gotAnswers.([]any)
-	if !ok || len(strs) != 1 || strs[0] != "DB-draft + fast poll" {
-		t.Fatalf("answers relayed as %#v (want plain-string array)", gotAnswers)
+	outer, ok := gotAnswers.([]any)
+	if !ok || len(outer) != 1 {
+		t.Fatalf("answers relayed as %#v (want nested arrays)", gotAnswers)
+	}
+	inner, ok := outer[0].([]any)
+	if !ok || len(inner) != 1 || inner[0] != "DB-draft + fast poll (Recommended)" {
+		t.Fatalf("answers relayed as %#v (want nested string array)", gotAnswers)
 	}
 }
 
-func TestHandleQuestionRejectsObjectAnswers(t *testing.T) {
-	// Kilo and the server both expect answers as plain strings; an object form
-	// (older/incorrect phone builds) must be rejected with a clear 400 instead
-	// of a confusing passthrough.
+func TestHandleQuestionRejectsFlatStringAnswers(t *testing.T) {
+	// kilo expects `answers` to be `QuestionAnswer[]` (each entry itself an
+	// array of labels). A flat `["label"]` is rejected by the server's own
+	// [][]string decoder with a clear 400 before any kilo call.
 	s := newTestAPI()
 	s.Store.ApplyEvent(event.Event{Type: "session.created", SessionID: "ses_x", Data: map[string]any{
 		"info": map[string]any{"id": "ses_x", "title": "X"},
 	}})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/ses_x/question", strings.NewReader(
-		`{"questionID":"q_1","answers":[{"value":"DB-draft + fast poll"}]}`,
+		`{"questionID":"q_1","answers":["DB-draft + fast poll"]}`,
 	))
 	req.SetPathValue("id", "ses_x")
 	s.HandleQuestion(rec, req)

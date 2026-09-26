@@ -4,6 +4,7 @@ import com.easycoderemote.util.APP_JSON
 import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -190,19 +191,23 @@ class ModelLabelTest {
     }
 
     @Test
-    fun questionReplyBodyUsesPlainStringAnswers() {
-        // Regression for the Submit failure ("cannot unmarshal object into
-        // questionReq.answers.0 of type string"): the phone must POST plain
-        // labels, mirroring ApiClient.questionReply's serialization.
+    fun questionReplyBodyUsesNestedAnswerArrays() {
+        // Kilo's schema (extracted from the 7.7.9 bundle) is
+        // `QuestionReply = { answers: QuestionAnswer[] }` with each QuestionAnswer
+        // an array of labels, one per question in order. A single-select reply is
+        // therefore `answers:[["label"]]` — a flat `["label"]` is rejected by
+        // kilo (`Expected QuestionAnswer, got ...`).
         val json = buildJsonObject {
             put("questionID", "q_1")
-            putJsonArray("answers") { add(JsonPrimitive("DB-draft + fast poll")) }
+            putJsonArray("answers") { add(buildJsonArray { add(JsonPrimitive("DB-draft + fast poll (Recommended)")) }) }
         }
         val text = json.toString()
-        assertThat(text).isEqualTo("""{"questionID":"q_1","answers":["DB-draft + fast poll"]}""")
-        // And the wire body must parse back as plain strings on the server shape.
-        val answers = APP_JSON.parseToJsonElement(text).jsonObject["answers"]!!.jsonArray
-        assertThat(answers.all { it is JsonPrimitive }).isTrue()
-        assertThat(answers[0].jsonPrimitive.content).isEqualTo("DB-draft + fast poll")
+        assertThat(text).isEqualTo(
+            """{"questionID":"q_1","answers":[["DB-draft + fast poll (Recommended)"]]}""",
+        )
+        val arr = APP_JSON.parseToJsonElement(text).jsonObject["answers"]!!.jsonArray
+        assertThat(arr).hasSize(1)
+        assertThat(arr[0].jsonArray.first().jsonPrimitive.content)
+            .isEqualTo("DB-draft + fast poll (Recommended)")
     }
 }

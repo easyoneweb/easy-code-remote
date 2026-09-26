@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonArray
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -125,9 +126,12 @@ class ApiClient(
     suspend fun questionReply(sessionId: String, questionID: String, answers: List<String>) {
         val json = buildJsonObject {
             put("questionID", questionID)
-            // The wire contract is `answers: ["label", ...]` (plain strings);
-            // kilo's `/question/{id}/reply` takes exactly that shape.
-            putJsonArray("answers") { answers.forEach { add(JsonPrimitive(it)) } }
+            // Kilo's schema: `QuestionReply = { answers: QuestionAnswer[] }` where
+            // each QuestionAnswer is an array of selected labels, one per asked
+            // question in order. A single-select reply is `answers:[["label"]]`.
+            putJsonArray("answers") {
+                addJsonArray { answers.forEach { add(JsonPrimitive(it)) } }
+            }
         }
         post(auth = true, path = "/api/v1/sessions/${enc(sessionId)}/question", jsonBody = json.toString())
     }

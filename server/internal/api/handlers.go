@@ -394,9 +394,9 @@ func isWildcardRule(raw json.RawMessage) bool {
 }
 
 type questionReq struct {
-	QuestionID string   `json:"questionID"`
-	Answers    []string `json:"answers"`
-	Action     string   `json:"action"`
+	QuestionID string     `json:"questionID"`
+	Answers    [][]string `json:"answers"`
+	Action     string     `json:"action"`
 }
 
 // HandleQuestion answers or rejects a question in a session.
