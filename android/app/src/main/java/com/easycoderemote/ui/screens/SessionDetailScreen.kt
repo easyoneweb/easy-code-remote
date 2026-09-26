@@ -432,9 +432,10 @@ private fun Composer(
                 PickerChip("agent", ComposerOverrides.resolveAgent(agent, session), agentOptions, onAgentChange)
 
                 // Model: provider-grouped searchable picker sheet. The chip shows the
-                // override's display name, else the session's active `provider · id`,
-                // else "auto".
-                val overrideEntry = (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+                // override's display name (or its id when the config entry is
+                // missing), else the session's active `provider · id`, else "auto".
+                val overrideModelId = (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull
+                val overrideEntry = overrideModelId
                     ?.let { mid -> config?.models?.firstOrNull { it.id == mid } }
                 val sessionModelEntry = session?.sessionModelId()
                     ?.let { mid -> config?.models?.firstOrNull { it.id == mid } }
@@ -442,7 +443,7 @@ private fun Composer(
                 var showModelPicker by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { showModelPicker = true }, modifier = Modifier.padding(vertical = 2.dp)) {
                     Text(
-                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName, session).take(14)}",
+                        "model: ${ComposerOverrides.resolveModelLabel(overrideEntry?.displayName ?: overrideModelId, session).take(14)}",
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                     )
@@ -452,7 +453,7 @@ private fun Composer(
                         models = config?.models ?: emptyList(),
                         loading = config == null,
                         initialProviderID = overrideEntry?.providerID,
-                        initialSearch = (model as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull,
+                        initialSearch = overrideModelId,
                         onSelect = { providerID, id ->
                             onModelSelect(providerID, id)
                             showModelPicker = false
@@ -541,7 +542,7 @@ private fun ModelPickerSheet(
         models.groupBy { it.providerID?.takeIf { p -> p.isNotBlank() } ?: "unknown" }
             .toSortedMap()
     }
-    var providerID by remember { mutableStateOf(initialProviderID) }
+    var providerID by remember { mutableStateOf(initialProviderID?.takeIf { it.isNotBlank() }) }
     var search by remember { mutableStateOf(initialSearch.orEmpty()) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {

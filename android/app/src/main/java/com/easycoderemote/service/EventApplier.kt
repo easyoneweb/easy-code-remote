@@ -163,7 +163,9 @@ class EventApplier(
         val seq = existing?.seq ?: ((messageDao.maxSeq(profileId, sessionId) ?: 0L) + 1)
         val role = data?.jsonObject("info")?.str("role") ?: data?.str("role") ?: "assistant"
         val created = data?.jsonObject("info")?.jsonObject("time")?.get("created")?.jsonPrimitive?.longOrNull ?: 0L
-        val info = data?.jsonObject("info")?.let {
+        // Badge fields live in `data.info` (SSE/messages shape); tolerate a flat
+        // message-like `data` shape the same way `role` is read above.
+        val info = (data?.jsonObject("info") ?: data)?.let {
             runCatching { APP_JSON.decodeFromJsonElement(MessageInfoDto.serializer(), it) }.getOrNull()
         }
         messageDao.upsert(
